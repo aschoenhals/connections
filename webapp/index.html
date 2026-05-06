@@ -15,6 +15,7 @@
         </div>
         <div class="controls">
           <input id="searchInput" type="text" placeholder="Name suchen ..." />
+          <button id="addPersonBtn">+ Person</button>
           <button id="addRelBtn">+ Beziehung hinzufügen</button>
           <button id="resetBtn">Layout neu anordnen</button>
         </div>
@@ -77,6 +78,24 @@
 
     <!-- Kontextmenü (Rechtsklick auf Knoten) -->
     <div id="ctxMenu" class="ctx-menu" hidden></div>
+
+    <!-- Modal: neue Person -->
+    <div id="addPersonModal" class="modal-backdrop" hidden>
+      <div class="modal">
+        <h2>Person hinzufügen</h2>
+
+        <label>Name
+          <input id="addPersonName" type="text" placeholder="Vor- und Nachname" />
+        </label>
+
+        <p id="addPersonError" class="modal-error" hidden></p>
+
+        <div class="modal-actions">
+          <button id="addPersonCancelBtn">Abbrechen</button>
+          <button id="addPersonSaveBtn" class="primary">Hinzufügen</button>
+        </div>
+      </div>
+    </div>
 
     <!-- Modal: Person bearbeiten -->
     <div id="personModal" class="modal-backdrop" hidden>

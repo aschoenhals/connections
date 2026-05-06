@@ -35,6 +35,12 @@ const personDeletePhotoBtn = document.getElementById('personDeletePhotoBtn');
 const personCancelBtn = document.getElementById('personCancelBtn');
 const personSaveBtn = document.getElementById('personSaveBtn');
 const personError = document.getElementById('personError');
+const addPersonBtn = document.getElementById('addPersonBtn');
+const addPersonModal = document.getElementById('addPersonModal');
+const addPersonName = document.getElementById('addPersonName');
+const addPersonError = document.getElementById('addPersonError');
+const addPersonCancelBtn = document.getElementById('addPersonCancelBtn');
+const addPersonSaveBtn = document.getElementById('addPersonSaveBtn');
 
 const COLORS = {
   rot: '#ef4444',
@@ -809,7 +815,56 @@ addRelBtn.addEventListener('click', openModal);
 relCancelBtn.addEventListener('click', closeModal);
 relSaveBtn.addEventListener('click', addRelationship);
 relModal.addEventListener('click', e => { if (e.target === relModal) closeModal(); });
-document.addEventListener('keydown', e => { if (e.key === 'Escape') { closeModal(); closeEditModal(); hideCtxMenu(); } });
+document.addEventListener('keydown', e => { if (e.key === 'Escape') { closeModal(); closeEditModal(); closeAddPersonModal(); hideCtxMenu(); } });
+
+// ── Modal: Person hinzufügen ──────────────────────────────────
+
+function openAddPersonModal() {
+  addPersonName.value = '';
+  addPersonError.hidden = true;
+  addPersonModal.hidden = false;
+  addPersonName.focus();
+}
+
+function closeAddPersonModal() {
+  addPersonModal.hidden = true;
+}
+
+function saveNewPerson() {
+  const name = addPersonName.value.trim();
+  if (!name) {
+    addPersonError.textContent = 'Bitte einen Namen eingeben.';
+    addPersonError.hidden = false;
+    return;
+  }
+  const viewportCenter = screenToWorld({
+    x: canvas.clientWidth / 2,
+    y: canvas.clientHeight / 2
+  });
+  const pid = newId('p');
+  const node = {
+    id:           state.nodes.length,
+    person_id:    pid,
+    display_name: name,
+    x: viewportCenter.x + (Math.random() - 0.5) * 160,
+    y: viewportCenter.y + (Math.random() - 0.5) * 160,
+    radius:    28,
+    fill:      hashColor(pid),
+    labelWidth: 0,
+    initials:  initials(name),
+    degree:    0
+  };
+  state.nodes.push(node);
+  state.nodeMap.set(pid, node);
+  closeAddPersonModal();
+  persist();
+}
+
+addPersonBtn.addEventListener('click', openAddPersonModal);
+addPersonCancelBtn.addEventListener('click', closeAddPersonModal);
+addPersonSaveBtn.addEventListener('click', saveNewPerson);
+addPersonModal.addEventListener('click', e => { if (e.target === addPersonModal) closeAddPersonModal(); });
+addPersonName.addEventListener('keydown', e => { if (e.key === 'Enter') saveNewPerson(); });
 
 // ── Kontextmenü (Rechtsklick auf Knoten) ───────────
 
