@@ -425,7 +425,10 @@ function drawEdge(edge) {
   const cx = (source.x + target.x) / 2 + nx * bend * directionSeed;
   const cy = (source.y + target.y) / 2 + ny * bend * directionSeed;
   const color = COLORS[edge.color];
-  const alpha = state.searchTerm && source !== state.activeNode && target !== state.activeNode ? 0.18 : 0.72;
+  const edgeMatchesSearch = state.searchTerm &&
+    (normalizeText(source.display_name).includes(state.searchTerm) ||
+     normalizeText(target.display_name).includes(state.searchTerm));
+  const alpha = state.searchTerm && !edgeMatchesSearch ? 0.18 : 0.72;
 
   ctx.save();
   ctx.strokeStyle = color;
@@ -444,7 +447,7 @@ function drawEdge(edge) {
 function drawNode(node) {
   const isActive = state.activeNode === node || state.hoveredNode === node;
   const isSelected = state.selectedNodes.has(node);
-  const isDimmed = state.searchTerm && state.activeNode !== node;
+  const isDimmed = Boolean(state.searchTerm) && !normalizeText(node.display_name).includes(state.searchTerm);
 
   loadPortrait(node.person_id);
 
