@@ -1,6 +1,6 @@
 services:
   - type: web
-    name: rex-mindmap
+    name: connections-mindmap
     env: python
     plan: free
     buildCommand: pip install -r requirements.txt
