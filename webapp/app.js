@@ -838,6 +838,16 @@ function showCtxMenu(node, screenX, screenY) {
   });
   ctxMenu.appendChild(editPersonItem);
 
+  // ── Person löschen ──
+  const deletePersonItem = document.createElement('div');
+  deletePersonItem.className = 'ctx-menu-item ctx-menu-item--danger';
+  deletePersonItem.textContent = 'Person löschen';
+  deletePersonItem.addEventListener('click', () => {
+    hideCtxMenu();
+    deletePerson(node);
+  });
+  ctxMenu.appendChild(deletePersonItem);
+
   if (edges.length > 0) {
     const sep = document.createElement('div');
     sep.className = 'ctx-menu-separator';
@@ -923,6 +933,21 @@ function deleteEdge() {
   ctxEdge.target.degree = Math.max(0, ctxEdge.target.degree - 1);
   state.edges = state.edges.filter(e => e !== ctxEdge);
   closeEditModal();
+  persist();
+}
+
+function deletePerson(node) {
+  if (!confirm(`"${node.display_name}" wirklich löschen? Alle Beziehungen dieser Person werden ebenfalls entfernt.`)) return;
+  // Remove all edges involving this person
+  state.edges = state.edges.filter(e => {
+    if (e.source === node || e.target === node) {
+      const other = e.source === node ? e.target : e.source;
+      other.degree = Math.max(0, other.degree - 1);
+      return false;
+    }
+    return true;
+  });
+  state.nodes = state.nodes.filter(n => n !== node);
   persist();
 }
 
