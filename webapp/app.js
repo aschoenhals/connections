@@ -54,6 +54,7 @@ const state = {
   nodeMap: new Map(),
   activeNode: null,
   hoveredNode: null,
+  selectedNodes: new Set(),
   searchTerm: '',
   viewport: {
     x: 0,
@@ -380,6 +381,7 @@ function drawEdge(edge) {
 
 function drawNode(node) {
   const isActive = state.activeNode === node || state.hoveredNode === node;
+  const isSelected = state.selectedNodes.has(node);
   const isDimmed = state.searchTerm && state.activeNode !== node;
 
   loadPortrait(node.person_id);
@@ -434,9 +436,18 @@ function drawNode(node) {
   // Border ring
   ctx.beginPath();
   ctx.arc(node.x, node.y, node.radius, 0, Math.PI * 2);
-  ctx.lineWidth = isActive ? 3 : 1.5;
-  ctx.strokeStyle = isActive ? '#000000' : 'rgba(0,0,0,0.45)';
+  ctx.lineWidth = isActive ? 3 : isSelected ? 2.5 : 1.5;
+  ctx.strokeStyle = isSelected ? '#2563eb' : isActive ? '#000000' : 'rgba(0,0,0,0.45)';
   ctx.stroke();
+
+  // Selection glow ring
+  if (isSelected) {
+    ctx.beginPath();
+    ctx.arc(node.x, node.y, node.radius + 5, 0, Math.PI * 2);
+    ctx.lineWidth = 2;
+    ctx.strokeStyle = 'rgba(37,99,235,0.35)';
+    ctx.stroke();
+  }
 
   // Label below node
   ctx.fillStyle = '#000000';
@@ -510,6 +521,8 @@ canvas.addEventListener('pointerdown', event => {
   const node = hitTest(point);
 
   if (event.button === 1 || (event.button === 0 && !node)) {
+    // Shift+click on empty area clears selection
+    if (!event.shiftKey) state.selectedNodes.clear();
     panInfo = {
       lastX: event.clientX,
       lastY: event.clientY
@@ -522,11 +535,31 @@ canvas.addEventListener('pointerdown', event => {
 
   if (!node || event.button !== 0) return;
 
+  if (event.shiftKey) {
+    // Toggle this node in/out of selection
+    if (state.selectedNodes.has(node)) {
+      state.selectedNodes.delete(node);
+    } else {
+      state.selectedNodes.add(node);
+    }
+    state.activeNode = node;
+    return;
+  }
+
+  // If clicking a node that isn't selected, clear selection
+  if (!state.selectedNodes.has(node)) {
+    state.selectedNodes.clear();
+  }
+
   const worldPoint = screenToWorld(point);
+  // Build per-node offsets for all selected (or just this one)
+  const dragNodes = state.selectedNodes.size > 0
+    ? [...state.selectedNodes]
+    : [node];
   dragInfo = {
     node,
-    offsetX: worldPoint.x - node.x,
-    offsetY: worldPoint.y - node.y,
+    dragNodes,
+    offsets: dragNodes.map(n => ({ dx: worldPoint.x - n.x, dy: worldPoint.y - n.y })),
     moved: false
   };
   state.activeNode = node;
@@ -539,11 +572,16 @@ canvas.addEventListener('pointermove', event => {
 
   if (dragInfo) {
     const worldPoint = screenToWorld(point);
-    if (Math.abs(worldPoint.x - dragInfo.node.x) > 0.01 || Math.abs(worldPoint.y - dragInfo.node.y) > 0.01) {
-      dragInfo.moved = true;
-    }
-    dragInfo.node.x = worldPoint.x - dragInfo.offsetX;
-    dragInfo.node.y = worldPoint.y - dragInfo.offsetY;
+    const moved = dragInfo.dragNodes.some((n, i) => {
+      const nx = worldPoint.x - dragInfo.offsets[i].dx;
+      const ny = worldPoint.y - dragInfo.offsets[i].dy;
+      return Math.abs(nx - n.x) > 0.01 || Math.abs(ny - n.y) > 0.01;
+    });
+    if (moved) dragInfo.moved = true;
+    dragInfo.dragNodes.forEach((n, i) => {
+      n.x = worldPoint.x - dragInfo.offsets[i].dx;
+      n.y = worldPoint.y - dragInfo.offsets[i].dy;
+    });
     return;
   }
 
