@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<html lang="de">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Interaktive Mindmap</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <header class="topbar">
+        <div>
+          <h1>Interaktive Beziehungs-Mindmap</h1>
+          <p>Personen verschieben, Linienfarben aus der CSV anzeigen</p>
+        </div>
+        <div class="controls">
+          <input id="searchInput" type="text" placeholder="Name suchen ..." />
+          <button id="addRelBtn">+ Beziehung hinzufügen</button>
+          <button id="resetBtn">Layout neu anordnen</button>
+        </div>
+      </header>
+
+      <aside class="legend">
+        <span><i class="dot red"></i> rot</span>
+        <span><i class="dot blue"></i> blau</span>
+        <span><i class="dot orange"></i> orange</span>
+      </aside>
+
+      <main class="canvas-wrap">
+        <canvas id="mindmapCanvas"></canvas>
+        <div class="zoom-controls">
+          <button id="zoomInBtn" title="Hereinzoomen">+</button>
+          <button id="zoomOutBtn" title="Herauszoomen">−</button>
+        </div>
+      </main>
+    </div>
+
+    <!-- Modal: neue Beziehung -->
+    <div id="relModal" class="modal-backdrop" hidden>
+      <div class="modal">
+        <h2>Neue Beziehung anlegen</h2>
+
+        <label>Von Person
+          <div class="person-input-wrap">
+            <input id="relFrom" type="text" placeholder="Name wählen oder eingeben" autocomplete="off" />
+            <div id="relFromDropdown" class="person-dropdown" hidden></div>
+          </div>
+        </label>
+
+        <label>Zu Person
+          <div class="person-input-wrap">
+            <input id="relTo" type="text" placeholder="Name wählen oder eingeben" autocomplete="off" />
+            <div id="relToDropdown" class="person-dropdown" hidden></div>
+          </div>
+        </label>
+
+        <label>Linienfarbe
+          <select id="relColor">
+            <option value="rot">rot</option>
+            <option value="blau">blau</option>
+            <option value="orange">orange</option>
+          </select>
+        </label>
+
+        <label>Label (optional)
+          <input id="relLabel" type="text" placeholder="z. B. Tochter, Trauzeuge …" />
+        </label>
+
+        <p id="relError" class="modal-error" hidden></p>
+
+        <div class="modal-actions">
+          <button id="relCancelBtn">Abbrechen</button>
+          <button id="relSaveBtn" class="primary">Hinzufügen</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Kontextmenü (Rechtsklick auf Knoten) -->
+    <div id="ctxMenu" class="ctx-menu" hidden></div>
+
+    <!-- Modal: Person bearbeiten -->
+    <div id="personModal" class="modal-backdrop" hidden>
+      <div class="modal">
+        <h2>Person bearbeiten</h2>
+
+        <label>Name
+          <input id="personName" type="text" />
+        </label>
+
+        <div class="portrait-editor">
+          <div class="portrait-preview-wrap">
+            <img id="personPortraitPreview" class="portrait-preview" src="/portraits/placeholder.svg" alt="Vorschau" />
+          </div>
+          <div class="portrait-actions">
+            <label class="btn-upload">
+              Foto hochladen
+              <input id="personPhotoInput" type="file" accept="image/jpeg,image/png" hidden />
+            </label>
+            <button id="personDeletePhotoBtn" class="danger-text">Foto löschen</button>
+          </div>
+        </div>
+
+        <p id="personError" class="modal-error" hidden></p>
+
+        <div class="modal-actions">
+          <button id="personCancelBtn">Abbrechen</button>
+          <button id="personSaveBtn" class="primary">Speichern</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Modal: Beziehung bearbeiten -->
+    <div id="editModal" class="modal-backdrop" hidden>
+      <div class="modal">
+        <h2>Beziehung bearbeiten</h2>
+
+        <label>Von Person
+          <input id="editFrom" type="text" readonly />
+        </label>
+
+        <label>Zu Person
+          <input id="editTo" type="text" readonly />
+        </label>
+
+        <label>Linienfarbe
+          <select id="editColor">
+            <option value="rot">rot</option>
+            <option value="blau">blau</option>
+            <option value="orange">orange</option>
+          </select>
+        </label>
+
+        <label>Label (optional)
+          <input id="editLabel" type="text" placeholder="z. B. Tochter, Trauzeuge …" />
+        </label>
+
+        <p id="editError" class="modal-error" hidden></p>
+
+        <div class="modal-actions">
+          <button id="editDeleteBtn" class="danger">Löschen</button>
+          <button id="editCancelBtn">Abbrechen</button>
+          <button id="editSaveBtn" class="primary">Speichern</button>
+        </div>
+      </div>
+    </div>
+
+    <script src="app.js"></script>
+  </body>
+</html>

@@ -1,0 +1,11 @@
+relation_id,from_id,to_id,linienfarbe,label
+r_1,p_1,p_2,rot,Zwillingsbruder
+r_2,p_1,p_3,rot,
+r_3,p_2,p_4,rot,
+r_4,p_5,p_6,orange,
+r_5,p_4,p_7,rot,
+r_6,p_7,p_8,rot,
+r_7,p_7,p_9,rot,
+r_8,p_8,p_9,rot,
+r_9,p_8,p_10,rot,
+r_10,p_7,p_10,rot,

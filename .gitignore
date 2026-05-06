@@ -1,0 +1,11 @@
+node_modules
+.env
+.venv/
+__pycache__/
+*.pyc
+.DS_Store
+
+# Generated portraits (keep placeholder.svg in git)
+webapp/portraits/p_*.jpg
+webapp/portraits/p_*.jpeg
+webapp/portraits/p_*.png
