@@ -403,6 +403,19 @@ function drawNode(node) {
     const d = node.radius * 2;
     ctx.drawImage(img, node.x - node.radius, node.y - node.radius, d, d);
     ctx.restore();
+  } else if (img === 'loading') {
+    // Loading spinner
+    ctx.beginPath();
+    ctx.arc(node.x, node.y, node.radius, 0, Math.PI * 2);
+    ctx.fillStyle = '#e5e7eb';
+    ctx.fill();
+    const angle = (performance.now() / 600) % (Math.PI * 2);
+    ctx.beginPath();
+    ctx.arc(node.x, node.y, node.radius * 0.52, angle, angle + Math.PI * 1.4);
+    ctx.strokeStyle = '#6b7280';
+    ctx.lineWidth = 3;
+    ctx.lineCap = 'round';
+    ctx.stroke();
   } else {
     // Fallback: colored circle + initials
     ctx.beginPath();
