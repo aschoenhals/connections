@@ -10,33 +10,20 @@
     <div class="app-shell">
       <header class="topbar">
         <div>
-          <h1>Interaktive Beziehungs-Mindmap</h1>
-          <p>Personen verschieben, Linienfarben aus der CSV anzeigen</p>
+          <h1>Wer gehört zu wem?</h1>
+          <p>Personen stehen in Beziehung zueinander.</p>
         </div>
         <div class="controls">
           <input id="searchInput" type="text" placeholder="Name suchen ..." />
           <button id="addPersonBtn">+ Person</button>
           <button id="addRelBtn">+ Beziehung hinzufügen</button>
-          <div class="layout-picker-wrap">
-            <button id="resetBtn">Layout ▾</button>
-            <div id="layoutMenu" class="layout-menu" hidden>
-              <div class="layout-menu-item" data-layout="radial">🕸 Radial / Spider</div>
-              <div class="layout-menu-item" data-layout="tree">🌲 Tree / Hierarchisch</div>
-              <div class="layout-menu-item" data-layout="org">🏢 Org Chart</div>
-              <div class="layout-menu-item" data-layout="fishbone">🐟 Fishbone / Ishikawa</div>
-              <div class="layout-menu-item" data-layout="bubble">🫧 Bubble Map</div>
-              <div class="layout-menu-item" data-layout="flow">➡ Flow Map</div>
-              <div class="layout-menu-item" data-layout="concept">🔗 Concept Map</div>
-              <div class="layout-menu-item" data-layout="double">⚖ Double Bubble</div>
-            </div>
-          </div>
         </div>
       </header>
 
       <aside class="legend">
-        <span><i class="dot red"></i> rot</span>
-        <span><i class="dot blue"></i> blau</span>
-        <span><i class="dot orange"></i> orange</span>
+        <span><i class="dot red"></i> verliebt</span>
+        <span><i class="dot orange"></i> verwandt</span>
+        <span><i class="dot blue"></i> befreundet</span>
       </aside>
 
       <main class="canvas-wrap">
