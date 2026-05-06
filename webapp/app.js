@@ -27,6 +27,7 @@ const editSaveBtn = document.getElementById('editSaveBtn');
 const editDeleteBtn = document.getElementById('editDeleteBtn');
 const zoomInBtn = document.getElementById('zoomInBtn');
 const zoomOutBtn = document.getElementById('zoomOutBtn');
+const centerizeBtn = document.getElementById('centerizeBtn');
 const personModal = document.getElementById('personModal');
 const personName = document.getElementById('personName');
 const personPhotoInput = document.getElementById('personPhotoInput');
@@ -179,6 +180,7 @@ async function loadData() {
   const hasSavedPositions = parseData(data.persons || [], data.connections || []);
   initializeLayout(!hasSavedPositions);
   animate();
+  centerize(false); // instant center on initial load
 }
 
 async function persist() {
@@ -672,6 +674,53 @@ function smoothZoom(factor, durationMs = 220) {
 
 zoomInBtn.addEventListener('click',  () => smoothZoom(1.4));
 zoomOutBtn.addEventListener('click', () => smoothZoom(1 / 1.4));
+centerizeBtn.addEventListener('click', () => centerize(true));
+
+function centerize(animated = true, durationMs = 300) {
+  if (state.nodes.length === 0) return;
+  // Compute bounding box of all nodes
+  let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+  for (const n of state.nodes) {
+    minX = Math.min(minX, n.x - n.radius);
+    maxX = Math.max(maxX, n.x + n.radius);
+    minY = Math.min(minY, n.y - n.radius);
+    maxY = Math.max(maxY, n.y + n.radius);
+  }
+  const contentW = maxX - minX;
+  const contentH = maxY - minY;
+  const contentCX = (minX + maxX) / 2;
+  const contentCY = (minY + maxY) / 2;
+  const padding = 80;
+  const scaleX = (canvas.clientWidth  - padding * 2) / Math.max(contentW, 1);
+  const scaleY = (canvas.clientHeight - padding * 2) / Math.max(contentH, 1);
+  const targetScale = clamp(Math.min(scaleX, scaleY, 1.4), state.viewport.minScale, state.viewport.maxScale);
+  const targetX = canvas.clientWidth  / 2 - contentCX * targetScale;
+  const targetY = canvas.clientHeight / 2 - contentCY * targetScale;
+
+  if (!animated) {
+    state.viewport.scale = targetScale;
+    state.viewport.x = targetX;
+    state.viewport.y = targetY;
+    return;
+  }
+
+  if (zoomAnimation) cancelAnimationFrame(zoomAnimation);
+  const startScale = state.viewport.scale;
+  const startX = state.viewport.x;
+  const startY = state.viewport.y;
+  const startTime = performance.now();
+
+  function step(now) {
+    const t = Math.min((now - startTime) / durationMs, 1);
+    const ease = t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2;
+    state.viewport.scale = startScale + (targetScale - startScale) * ease;
+    state.viewport.x = startX + (targetX - startX) * ease;
+    state.viewport.y = startY + (targetY - startY) * ease;
+    if (t < 1) { zoomAnimation = requestAnimationFrame(step); }
+    else { zoomAnimation = null; }
+  }
+  zoomAnimation = requestAnimationFrame(step);
+}
 
 window.addEventListener('resize', () => {
   resizeCanvas();
