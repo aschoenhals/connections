@@ -17,7 +17,19 @@
           <input id="searchInput" type="text" placeholder="Name suchen ..." />
           <button id="addPersonBtn">+ Person</button>
           <button id="addRelBtn">+ Beziehung hinzufügen</button>
-          <button id="resetBtn">Layout neu anordnen</button>
+          <div class="layout-picker-wrap">
+            <button id="resetBtn">Layout ▾</button>
+            <div id="layoutMenu" class="layout-menu" hidden>
+              <div class="layout-menu-item" data-layout="radial">🕸 Radial / Spider</div>
+              <div class="layout-menu-item" data-layout="tree">🌲 Tree / Hierarchisch</div>
+              <div class="layout-menu-item" data-layout="org">🏢 Org Chart</div>
+              <div class="layout-menu-item" data-layout="fishbone">🐟 Fishbone / Ishikawa</div>
+              <div class="layout-menu-item" data-layout="bubble">🫧 Bubble Map</div>
+              <div class="layout-menu-item" data-layout="flow">➡ Flow Map</div>
+              <div class="layout-menu-item" data-layout="concept">🔗 Concept Map</div>
+              <div class="layout-menu-item" data-layout="double">⚖ Double Bubble</div>
+            </div>
+          </div>
         </div>
       </header>
 
