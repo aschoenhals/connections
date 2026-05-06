@@ -14,3 +14,5 @@ services:
         sync: false
       - key: SUPABASE_STORAGE_BUCKET
         value: portraits
+      - key: SECRET_KEY
+        generateValue: true

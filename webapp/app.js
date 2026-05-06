@@ -14,6 +14,50 @@ const relSaveBtn = document.getElementById('relSaveBtn');
 const relFromDropdown = document.getElementById('relFromDropdown');
 const relToDropdown = document.getElementById('relToDropdown');
 
+// ── Auth-State ────────────────────────────────────────────────
+const auth = {
+  mindmapId:   sessionStorage.getItem('mm_id')   || null,
+  token:       sessionStorage.getItem('mm_token') || null,
+  mindmapName: sessionStorage.getItem('mm_name')  || null,
+};
+
+function setAuth(mindmapId, token, name) {
+  auth.mindmapId   = mindmapId;
+  auth.token       = token;
+  auth.mindmapName = name || mindmapId;
+  sessionStorage.setItem('mm_id',    mindmapId);
+  sessionStorage.setItem('mm_token', token);
+  sessionStorage.setItem('mm_name',  auth.mindmapName);
+}
+
+function clearAuth() {
+  auth.mindmapId   = null;
+  auth.token       = null;
+  auth.mindmapName = null;
+  sessionStorage.removeItem('mm_id');
+  sessionStorage.removeItem('mm_token');
+  sessionStorage.removeItem('mm_name');
+}
+
+function authHeaders(extra = {}) {
+  const h = { ...extra };
+  if (auth.token) h['Authorization'] = `Bearer ${auth.token}`;
+  return h;
+}
+
+async function apiFetch(url, options = {}) {
+  const resp = await fetch(url, {
+    ...options,
+    headers: authHeaders(options.headers || {}),
+  });
+  if (resp.status === 401) {
+    clearAuth();
+    showLandingModal();
+    throw new Error('unauthorized');
+  }
+  return resp;
+}
+
 // Edit-Modal
 const ctxMenu = document.getElementById('ctxMenu');
 const editModal = document.getElementById('editModal');
@@ -42,6 +86,20 @@ const addPersonName = document.getElementById('addPersonName');
 const addPersonError = document.getElementById('addPersonError');
 const addPersonCancelBtn = document.getElementById('addPersonCancelBtn');
 const addPersonSaveBtn = document.getElementById('addPersonSaveBtn');
+const switchMindmapBtn = document.getElementById('switchMindmapBtn');
+const mindmapNameEl = document.getElementById('mindmapName');
+const landingModal = document.getElementById('landingModal');
+const joinTab = document.getElementById('joinTab');
+const createTab = document.getElementById('createTab');
+const joinId = document.getElementById('joinId');
+const joinPassword = document.getElementById('joinPassword');
+const joinError = document.getElementById('joinError');
+const joinBtn = document.getElementById('joinBtn');
+const createId = document.getElementById('createId');
+const createName = document.getElementById('createName');
+const createPassword = document.getElementById('createPassword');
+const createError = document.getElementById('createError');
+const createBtn = document.getElementById('createBtn');
 
 const COLORS = {
   rot: '#ef4444',
@@ -154,6 +212,8 @@ function loadPortrait(personId) {
   if (imageCache.has(personId)) return;
   imageCache.set(personId, 'loading');
 
+  const prefix = auth.mindmapId ? `${auth.mindmapId}/` : '';
+
   const tryExtensions = (exts) => {
     if (exts.length === 0) {
       // All person-specific extensions failed → try placeholder
@@ -166,7 +226,7 @@ function loadPortrait(personId) {
     const img = new Image();
     img.onload = () => imageCache.set(personId, img);
     img.onerror = () => tryExtensions(exts.slice(1));
-    img.src = `/portraits/${personId}.${exts[0]}`;
+    img.src = `/portraits/${prefix}${personId}.${exts[0]}`;
   };
 
   tryExtensions(['jpg', 'jpeg', 'png']);
@@ -175,7 +235,7 @@ function loadPortrait(personId) {
 const API = '/api/data';
 
 async function loadData() {
-  const response = await fetch(API);
+  const response = await apiFetch(API);
   const data = await response.json();
   const hasSavedPositions = parseData(data.persons || [], data.connections || []);
   initializeLayout(!hasSavedPositions);
@@ -198,13 +258,13 @@ async function persist() {
     label:       e.label || ''
   }));
   try {
-    await fetch(API, {
+    await apiFetch(API, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ persons, connections })
     });
   } catch (err) {
-    console.error('Speichern fehlgeschlagen:', err);
+    if (err.message !== 'unauthorized') console.error('Speichern fehlgeschlagen:', err);
   }
 }
 
@@ -727,11 +787,137 @@ window.addEventListener('resize', () => {
   initializeLayout(false);
 });
 
-resizeCanvas();
-loadData().catch(error => {
-  console.error(error);
-  document.body.insertAdjacentHTML('beforeend', '<div style="position:fixed;bottom:16px;left:16px;background:#7f1d1d;color:#fff;padding:10px 12px;border-radius:8px;">Fehler beim Laden der CSV-Daten.</div>');
+// ── Landing / Auth Modal ────────────────────────────
+
+function showLandingModal() {
+  landingModal.hidden = false;
+}
+
+function hideLandingModal() {
+  landingModal.hidden = true;
+}
+
+function updateMindmapNameDisplay() {
+  mindmapNameEl.textContent = auth.mindmapName || auth.mindmapId || '';
+}
+
+// Tab switching
+document.querySelectorAll('.landing-tab-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.landing-tab-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    const tab = btn.dataset.tab;
+    joinTab.hidden   = tab !== 'join';
+    createTab.hidden = tab !== 'create';
+  });
 });
+
+async function handleJoin() {
+  const id = joinId.value.trim().toLowerCase();
+  const password = joinPassword.value;
+  joinError.hidden = true;
+
+  if (!id) {
+    joinError.textContent = 'Bitte eine Mindmap-ID eingeben.';
+    joinError.hidden = false;
+    return;
+  }
+
+  joinBtn.disabled = true;
+  joinBtn.textContent = 'Laden …';
+
+  try {
+    const resp = await fetch('/api/mindmap/auth', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id, password })
+    });
+    const data = await resp.json();
+    if (!resp.ok) {
+      joinError.textContent = data.error || 'Fehler beim Beitreten.';
+      joinError.hidden = false;
+      return;
+    }
+    setAuth(data.mindmap_id, data.token, data.name);
+    updateMindmapNameDisplay();
+    hideLandingModal();
+    loadData().catch(err => { if (err.message !== 'unauthorized') console.error(err); });
+  } catch {
+    joinError.textContent = 'Netzwerkfehler.';
+    joinError.hidden = false;
+  } finally {
+    joinBtn.disabled = false;
+    joinBtn.textContent = 'Beitreten';
+  }
+}
+
+async function handleCreate() {
+  const id = createId.value.trim().toLowerCase();
+  const name = createName.value.trim();
+  const password = createPassword.value;
+  createError.hidden = true;
+
+  if (!id) { createError.textContent = 'Bitte eine Mindmap-ID eingeben.'; createError.hidden = false; return; }
+  if (!name) { createError.textContent = 'Bitte einen Namen eingeben.'; createError.hidden = false; return; }
+  if (password.length < 4) { createError.textContent = 'Passwort muss mindestens 4 Zeichen haben.'; createError.hidden = false; return; }
+
+  createBtn.disabled = true;
+  createBtn.textContent = 'Erstellen …';
+
+  try {
+    const resp = await fetch('/api/mindmap', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id, name, password })
+    });
+    const data = await resp.json();
+    if (!resp.ok) {
+      createError.textContent = data.error || 'Fehler beim Erstellen.';
+      createError.hidden = false;
+      return;
+    }
+    setAuth(data.mindmap_id, data.token, data.name);
+    updateMindmapNameDisplay();
+    hideLandingModal();
+    loadData().catch(err => { if (err.message !== 'unauthorized') console.error(err); });
+  } catch {
+    createError.textContent = 'Netzwerkfehler.';
+    createError.hidden = false;
+  } finally {
+    createBtn.disabled = false;
+    createBtn.textContent = 'Mindmap erstellen';
+  }
+}
+
+joinBtn.addEventListener('click', handleJoin);
+createBtn.addEventListener('click', handleCreate);
+joinId.addEventListener('keydown', e => { if (e.key === 'Enter') handleJoin(); });
+joinPassword.addEventListener('keydown', e => { if (e.key === 'Enter') handleJoin(); });
+createPassword.addEventListener('keydown', e => { if (e.key === 'Enter') handleCreate(); });
+
+switchMindmapBtn.addEventListener('click', () => {
+  clearAuth();
+  state.nodes = [];
+  state.edges = [];
+  state.nodeMap.clear();
+  imageCache.clear();
+  showLandingModal();
+});
+
+// ── App-Initialisierung ────────────────────────────
+
+function init() {
+  resizeCanvas();
+  if (auth.token && auth.mindmapId) {
+    hideLandingModal();
+    updateMindmapNameDisplay();
+    loadData().catch(err => { if (err.message !== 'unauthorized') console.error(err); });
+  } else {
+    showLandingModal();
+  }
+}
+
+init();
 
 attachDropdown(relFrom, relFromDropdown);
 attachDropdown(relTo, relToDropdown);
@@ -1156,7 +1342,7 @@ personPhotoInput.addEventListener('change', () => {
 personDeletePhotoBtn.addEventListener('click', async () => {
   if (!personModalNode) return;
   try {
-    const resp = await fetch(`/api/portrait/${personModalNode.person_id}`, { method: 'DELETE' });
+    const resp = await apiFetch(`/api/portrait/${personModalNode.person_id}`, { method: 'DELETE' });
     if (!resp.ok) {
       personError.textContent = await readApiError(resp, 'Foto konnte nicht geloescht werden.');
       personError.hidden = false;
@@ -1188,13 +1374,15 @@ personSaveBtn.addEventListener('click', async () => {
     formData.append('portrait', file);
     let resp;
     try {
-      resp = await fetch(`/api/portrait/${personModalNode.person_id}`, {
+      resp = await apiFetch(`/api/portrait/${personModalNode.person_id}`, {
         method: 'POST',
         body: formData
       });
-    } catch {
-      personError.textContent = 'Netzwerkfehler beim Foto-Upload.';
-      personError.hidden = false;
+    } catch (err) {
+      if (err.message !== 'unauthorized') {
+        personError.textContent = 'Netzwerkfehler beim Foto-Upload.';
+        personError.hidden = false;
+      }
       return;
     }
     if (!resp.ok) {

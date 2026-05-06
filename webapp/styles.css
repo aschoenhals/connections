@@ -44,10 +44,29 @@ body {
   font-size: 1.15rem;
 }
 
-.topbar p {
+.topbar p,
+.mindmap-subtitle {
   margin: 4px 0 0;
   color: var(--muted);
   font-size: 0.92rem;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.btn-switch {
+  background: none;
+  border: none;
+  color: var(--accent);
+  font-size: 0.82rem;
+  cursor: pointer;
+  padding: 0 2px;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.btn-switch:hover {
+  opacity: 0.7;
 }
 
 .controls {
@@ -432,4 +451,86 @@ body {
 
 .danger-text:hover {
   text-decoration: underline;
+}
+
+/* ── Landing Modal ────────────────────────────────── */
+.landing-backdrop {
+  z-index: 500;
+  background: rgba(0, 0, 0, 0.55);
+  backdrop-filter: blur(4px);
+}
+
+.landing-modal {
+  width: min(420px, 94vw);
+  gap: 18px;
+}
+
+.landing-header {
+  text-align: center;
+}
+
+.landing-header h2 {
+  margin: 0 0 6px;
+  font-size: 1.4rem;
+}
+
+.landing-header p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.95rem;
+}
+
+.landing-tabs {
+  display: flex;
+  border-radius: 10px;
+  overflow: hidden;
+  border: 1px solid #d1d5db;
+}
+
+.landing-tab-btn {
+  flex: 1;
+  padding: 10px;
+  border: none;
+  background: #f9fafb;
+  color: var(--muted);
+  font-size: 0.9rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.12s, color 0.12s;
+}
+
+.landing-tab-btn:first-child {
+  border-right: 1px solid #d1d5db;
+}
+
+.landing-tab-btn.active {
+  background: #ffffff;
+  color: var(--text);
+}
+
+.landing-tab-btn:hover:not(.active) {
+  background: #f3f4f6;
+}
+
+.tab-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.tab-panel[hidden] {
+  display: none;
+}
+
+.field-hint {
+  font-size: 0.78rem;
+  color: #9ca3af;
+  font-weight: 400;
+  margin-top: 2px;
+}
+
+.full-width {
+  width: 100%;
+  padding: 12px;
+  font-size: 1rem;
 }

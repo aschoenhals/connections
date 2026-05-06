@@ -1,11 +1,15 @@
 import csv
+import hashlib
+import hmac
 import os
 import re
+import time
 from pathlib import Path
 
 import requests
 from flask import Flask, jsonify, redirect, request, send_from_directory
 from flask_cors import CORS
+from werkzeug.security import check_password_hash, generate_password_hash
 
 BASE_DIR = Path(__file__).parent
 PERSONS_PATH = BASE_DIR / "persons.csv"
@@ -25,6 +29,52 @@ CORS(app)
 
 VALID_COLORS = {"rot", "blau", "orange"}
 ALLOWED_EXTENSIONS = {"jpg", "jpeg", "png"}
+
+# ── Auth ─────────────────────────────────────────────────────
+SECRET_KEY = os.getenv("SECRET_KEY") or hashlib.sha256(os.urandom(32)).hexdigest()
+TOKEN_TTL_SECONDS = 60 * 60 * 24 * 7  # 7 Tage
+MINDMAP_ID_RE = re.compile(r"^[a-z0-9][a-z0-9-]{1,38}[a-z0-9]$")
+
+
+def _is_valid_mindmap_id(mid: str) -> bool:
+    return bool(MINDMAP_ID_RE.fullmatch(mid))
+
+
+def _make_token(mindmap_id: str) -> str:
+    payload = f"{mindmap_id}:{int(time.time()) + TOKEN_TTL_SECONDS}"
+    payload_hex = payload.encode().hex()
+    sig = hmac.new(SECRET_KEY.encode(), payload_hex.encode(), hashlib.sha256).hexdigest()
+    return f"{payload_hex}.{sig}"
+
+
+def _verify_token(token: str) -> str | None:
+    try:
+        payload_hex, sig = token.rsplit(".", 1)
+        expected = hmac.new(SECRET_KEY.encode(), payload_hex.encode(), hashlib.sha256).hexdigest()
+        if not hmac.compare_digest(sig, expected):
+            return None
+        payload = bytes.fromhex(payload_hex).decode()
+        mid, exp_str = payload.rsplit(":", 1)
+        if int(exp_str) < int(time.time()):
+            return None
+        if not _is_valid_mindmap_id(mid):
+            return None
+        return mid
+    except Exception:
+        return None
+
+
+def _require_auth():
+    """Returns (mindmap_id, None) on success, (None, error_response) on failure."""
+    if not USE_SUPABASE:
+        return "default", None  # CSV-Modus: keine Auth nötig
+    auth_header = request.headers.get("Authorization", "")
+    if not auth_header.startswith("Bearer "):
+        return None, (jsonify({"error": "Nicht autorisiert"}), 401)
+    mid = _verify_token(auth_header[7:])
+    if not mid:
+        return None, (jsonify({"error": "Token ungültig oder abgelaufen"}), 401)
+    return mid, None
 
 
 def _parse_float(value):
@@ -149,10 +199,10 @@ def _write_connections_csv(connections: list):
             ])
 
 
-def _read_persons_supabase() -> dict:
+def _read_persons_supabase(mindmap_id: str) -> dict:
     persons: dict = {}
     resp = requests.get(
-        _supabase_rest_url("persons", "select=person_id,display_name,x,y"),
+        _supabase_rest_url("persons", f"select=person_id,display_name,x,y&mindmap_id=eq.{mindmap_id}"),
         headers=_supabase_headers(),
         timeout=10,
     )
@@ -170,10 +220,10 @@ def _read_persons_supabase() -> dict:
     return persons
 
 
-def _read_connections_supabase() -> list:
+def _read_connections_supabase(mindmap_id: str) -> list:
     connections = []
     resp = requests.get(
-        _supabase_rest_url("connections", "select=relation_id,from_id,to_id,color,label"),
+        _supabase_rest_url("connections", f"select=relation_id,from_id,to_id,color,label&mindmap_id=eq.{mindmap_id}"),
         headers=_supabase_headers(),
         timeout=10,
     )
@@ -194,61 +244,84 @@ def _read_connections_supabase() -> list:
     return connections
 
 
-def _write_all_supabase(persons: dict, connections: list):
+def _write_all_supabase(persons: dict, connections: list, mindmap_id: str):
     resp = requests.delete(
-        _supabase_rest_url("connections", "relation_id=not.is.null"),
+        _supabase_rest_url("connections", f"mindmap_id=eq.{mindmap_id}"),
         headers={**_supabase_headers(), "Prefer": "return=minimal"},
         timeout=15,
     )
     _raise_for_supabase_error(resp, "Failed to clear connections")
 
     resp = requests.delete(
-        _supabase_rest_url("persons", "person_id=not.is.null"),
+        _supabase_rest_url("persons", f"mindmap_id=eq.{mindmap_id}"),
         headers={**_supabase_headers(), "Prefer": "return=minimal"},
         timeout=15,
     )
     _raise_for_supabase_error(resp, "Failed to clear persons")
 
     if persons:
+        persons_with_mid = [{**p, "mindmap_id": mindmap_id} for p in persons.values()]
         resp = requests.post(
             _supabase_rest_url("persons"),
             headers={**_supabase_headers("application/json"), "Prefer": "return=minimal"},
-            json=list(persons.values()),
+            json=persons_with_mid,
             timeout=15,
         )
         _raise_for_supabase_error(resp, "Failed to write persons")
 
     if connections:
+        connections_with_mid = [{**c, "mindmap_id": mindmap_id} for c in connections]
         resp = requests.post(
             _supabase_rest_url("connections"),
             headers={**_supabase_headers("application/json"), "Prefer": "return=minimal"},
-            json=connections,
+            json=connections_with_mid,
             timeout=15,
         )
         _raise_for_supabase_error(resp, "Failed to write connections")
 
 
-def read_persons() -> dict:
-    return _read_persons_supabase() if USE_SUPABASE else _read_persons_csv()
+def _get_mindmap_supabase(mindmap_id: str) -> dict | None:
+    resp = requests.get(
+        _supabase_rest_url("mindmaps", f"select=id,name,password_hash&id=eq.{mindmap_id}"),
+        headers=_supabase_headers(),
+        timeout=10,
+    )
+    _raise_for_supabase_error(resp, "Failed to query mindmap")
+    rows = resp.json()
+    return rows[0] if rows else None
 
 
-def read_connections() -> list:
-    return _read_connections_supabase() if USE_SUPABASE else _read_connections_csv()
+def _create_mindmap_supabase(mindmap_id: str, name: str, password_hash: str):
+    resp = requests.post(
+        _supabase_rest_url("mindmaps"),
+        headers={**_supabase_headers("application/json"), "Prefer": "return=minimal"},
+        json={"id": mindmap_id, "name": name, "password_hash": password_hash},
+        timeout=10,
+    )
+    _raise_for_supabase_error(resp, "Failed to create mindmap")
 
 
-def write_all(persons: dict, connections: list):
+def read_persons(mindmap_id: str = "default") -> dict:
+    return _read_persons_supabase(mindmap_id) if USE_SUPABASE else _read_persons_csv()
+
+
+def read_connections(mindmap_id: str = "default") -> list:
+    return _read_connections_supabase(mindmap_id) if USE_SUPABASE else _read_connections_csv()
+
+
+def write_all(persons: dict, connections: list, mindmap_id: str = "default"):
     if USE_SUPABASE:
-        _write_all_supabase(persons, connections)
+        _write_all_supabase(persons, connections, mindmap_id)
         return
     _write_persons_csv(persons)
     _write_connections_csv(connections)
 
 
-def delete_all_portraits_for_person(person_id: str):
+def delete_all_portraits_for_person(person_id: str, mindmap_id: str = "default"):
     if USE_SUPABASE_STORAGE:
         for ext in ALLOWED_EXTENSIONS:
             requests.delete(
-                _supabase_object_manage_url(f"{person_id}.{ext}"),
+                _supabase_object_manage_url(f"{mindmap_id}/{person_id}.{ext}"),
                 headers=_supabase_headers(),
                 timeout=10,
             )
@@ -256,15 +329,15 @@ def delete_all_portraits_for_person(person_id: str):
 
     PORTRAITS_DIR.mkdir(parents=True, exist_ok=True)
     for ext in ALLOWED_EXTENSIONS:
-        p = PORTRAITS_DIR / f"{person_id}.{ext}"
+        p = PORTRAITS_DIR / mindmap_id / f"{person_id}.{ext}"
         if p.exists():
             p.unlink(missing_ok=True)
 
 
-def upload_portrait_binary(person_id: str, ext: str, data: bytes, content_type: str):
+def upload_portrait_binary(person_id: str, ext: str, data: bytes, content_type: str, mindmap_id: str = "default"):
     if USE_SUPABASE_STORAGE:
         resp = requests.post(
-            _supabase_object_manage_url(f"{person_id}.{ext}"),
+            _supabase_object_manage_url(f"{mindmap_id}/{person_id}.{ext}"),
             headers={
                 **_supabase_headers(content_type),
                 "x-upsert": "true",
@@ -275,8 +348,9 @@ def upload_portrait_binary(person_id: str, ext: str, data: bytes, content_type: 
         resp.raise_for_status()
         return
 
-    PORTRAITS_DIR.mkdir(parents=True, exist_ok=True)
-    (PORTRAITS_DIR / f"{person_id}.{ext}").write_bytes(data)
+    local_dir = PORTRAITS_DIR / mindmap_id
+    local_dir.mkdir(parents=True, exist_ok=True)
+    (local_dir / f"{person_id}.{ext}").write_bytes(data)
 
 
 @app.route("/")
@@ -300,13 +374,20 @@ def static_files(path):
 
 @app.get("/api/data")
 def get_data():
-    persons = read_persons()
-    connections = read_connections()
+    mindmap_id, err = _require_auth()
+    if err:
+        return err
+    persons = read_persons(mindmap_id)
+    connections = read_connections(mindmap_id)
     return jsonify({"persons": list(persons.values()), "connections": connections})
 
 
 @app.post("/api/data")
 def save_data():
+    mindmap_id, err = _require_auth()
+    if err:
+        return err
+
     data = request.get_json(force=True)
     if not isinstance(data, dict):
         return jsonify({"error": "Expected a JSON object"}), 400
@@ -346,7 +427,7 @@ def save_data():
             }
         )
 
-    write_all(persons, connections)
+    write_all(persons, connections, mindmap_id)
     return jsonify({"saved_persons": len(persons), "saved_connections": len(connections)})
 
 
@@ -354,6 +435,10 @@ def save_data():
 def upload_portrait(person_id: str):
     if not _is_valid_person_id(person_id):
         return jsonify({"error": "Invalid person_id"}), 400
+
+    mindmap_id, err = _require_auth()
+    if err:
+        return err
 
     file = request.files.get("portrait")
     if not file or file.filename == "":
@@ -364,19 +449,20 @@ def upload_portrait(person_id: str):
         return jsonify({"error": "Only jpg, jpeg, png allowed"}), 400
 
     try:
-        delete_all_portraits_for_person(person_id)
+        delete_all_portraits_for_person(person_id, mindmap_id)
         upload_portrait_binary(
             person_id=person_id,
             ext=ext,
             data=file.read(),
             content_type=file.mimetype or "application/octet-stream",
+            mindmap_id=mindmap_id,
         )
     except requests.HTTPError as err:
         return jsonify({"error": f"Storage upload failed: {err.response.status_code}"}), 502
     except Exception as err:
         return jsonify({"error": f"Upload failed: {err}"}), 500
 
-    return jsonify({"saved": f"{person_id}.{ext}"})
+    return jsonify({"saved": f"{mindmap_id}/{person_id}.{ext}"})
 
 
 @app.delete("/api/portrait/<person_id>")
@@ -384,14 +470,88 @@ def delete_portrait(person_id: str):
     if not _is_valid_person_id(person_id):
         return jsonify({"error": "Invalid person_id"}), 400
 
+    mindmap_id, err = _require_auth()
+    if err:
+        return err
+
     try:
-        delete_all_portraits_for_person(person_id)
+        delete_all_portraits_for_person(person_id, mindmap_id)
     except requests.HTTPError as err:
         return jsonify({"error": f"Storage delete failed: {err.response.status_code}"}), 502
     except Exception as err:
         return jsonify({"error": f"Delete failed: {err}"}), 500
 
     return jsonify({"deleted": True})
+
+
+@app.post("/api/mindmap")
+def create_mindmap():
+    if not USE_SUPABASE:
+        return jsonify({"error": "Multi-Mindmap nur im Supabase-Modus verfügbar"}), 501
+
+    data = request.get_json(force=True)
+    if not isinstance(data, dict):
+        return jsonify({"error": "JSON-Objekt erwartet"}), 400
+
+    mid = str(data.get("id", "")).strip().lower()
+    name = str(data.get("name", "")).strip()
+    password = str(data.get("password", "")).strip()
+
+    if not _is_valid_mindmap_id(mid):
+        return jsonify({"error": "ID ungültig. Erlaubt: Kleinbuchstaben, Ziffern, Bindestriche; mind. 3 Zeichen, max. 40"}), 400
+    if not name:
+        return jsonify({"error": "Name fehlt"}), 400
+    if len(password) < 4:
+        return jsonify({"error": "Passwort muss mindestens 4 Zeichen haben"}), 400
+
+    try:
+        existing = _get_mindmap_supabase(mid)
+    except RuntimeError as err:
+        return jsonify({"error": str(err)}), 500
+
+    if existing is not None:
+        return jsonify({"error": "Diese ID ist bereits vergeben"}), 409
+
+    pw_hash = generate_password_hash(password)
+    try:
+        _create_mindmap_supabase(mid, name, pw_hash)
+    except RuntimeError as err:
+        return jsonify({"error": str(err)}), 500
+
+    token = _make_token(mid)
+    return jsonify({"token": token, "mindmap_id": mid, "name": name}), 201
+
+
+@app.post("/api/mindmap/auth")
+def auth_mindmap():
+    if not USE_SUPABASE:
+        # CSV-Modus: keine Mindmaps, direkt als "default" einloggen
+        return jsonify({"token": _make_token("default"), "mindmap_id": "default", "name": "Lokal"})
+
+    data = request.get_json(force=True)
+    if not isinstance(data, dict):
+        return jsonify({"error": "JSON-Objekt erwartet"}), 400
+
+    mid = str(data.get("id", "")).strip().lower()
+    password = str(data.get("password", "")).strip()
+
+    if not mid:
+        return jsonify({"error": "ID fehlt"}), 400
+
+    try:
+        mindmap = _get_mindmap_supabase(mid)
+    except RuntimeError as err:
+        return jsonify({"error": str(err)}), 500
+
+    if mindmap is None:
+        return jsonify({"error": "Mindmap nicht gefunden"}), 404
+
+    pw_hash = mindmap.get("password_hash", "")
+    if pw_hash and not check_password_hash(pw_hash, password):
+        return jsonify({"error": "Falsches Passwort"}), 403
+
+    token = _make_token(mid)
+    return jsonify({"token": token, "mindmap_id": mid, "name": mindmap.get("name", mid)})
 
 
 @app.get("/api/health")

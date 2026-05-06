@@ -11,7 +11,10 @@
       <header class="topbar">
         <div>
           <h1>Wer gehört zu wem?</h1>
-          <p>Personen stehen in Beziehung zueinander.</p>
+          <p class="mindmap-subtitle">
+            <span id="mindmapName"></span>
+            <button id="switchMindmapBtn" class="btn-switch" title="Mindmap wechseln">wechseln</button>
+          </p>
         </div>
         <div class="controls">
           <input id="searchInput" type="text" placeholder="Name suchen ..." />
@@ -159,6 +162,49 @@
           <button id="editDeleteBtn" class="danger">Löschen</button>
           <button id="editCancelBtn">Abbrechen</button>
           <button id="editSaveBtn" class="primary">Speichern</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Landing / Login Modal -->
+    <div id="landingModal" class="modal-backdrop landing-backdrop">
+      <div class="modal landing-modal">
+        <div class="landing-header">
+          <h2>NiceNecks Mindmap</h2>
+          <p>Wähle eine bestehende Mindmap oder erstelle eine neue.</p>
+        </div>
+
+        <div class="landing-tabs">
+          <button class="landing-tab-btn active" data-tab="join">Beitreten</button>
+          <button class="landing-tab-btn" data-tab="create">Neu erstellen</button>
+        </div>
+
+        <!-- Beitreten -->
+        <div id="joinTab" class="tab-panel">
+          <label>Mindmap-ID
+            <input id="joinId" type="text" placeholder="z. B. meine-familie" autocomplete="off" />
+          </label>
+          <label>Passwort
+            <input id="joinPassword" type="password" placeholder="Passwort (leer = öffentlich)" />
+          </label>
+          <p id="joinError" class="modal-error" hidden></p>
+          <button id="joinBtn" class="primary full-width">Beitreten</button>
+        </div>
+
+        <!-- Neu erstellen -->
+        <div id="createTab" class="tab-panel" hidden>
+          <label>Mindmap-ID
+            <input id="createId" type="text" placeholder="z. B. meine-familie" autocomplete="off" />
+            <small class="field-hint">Nur Kleinbuchstaben, Ziffern und Bindestriche, mind. 3 Zeichen</small>
+          </label>
+          <label>Name
+            <input id="createName" type="text" placeholder="z. B. Familie Müller" />
+          </label>
+          <label>Passwort
+            <input id="createPassword" type="password" placeholder="mind. 4 Zeichen" />
+          </label>
+          <p id="createError" class="modal-error" hidden></p>
+          <button id="createBtn" class="primary full-width">Mindmap erstellen</button>
         </div>
       </div>
     </div>
