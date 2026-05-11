@@ -470,7 +470,26 @@ function drawNode(node) {
     ctx.arc(node.x, node.y, node.radius, 0, Math.PI * 2);
     ctx.clip();
     const d = node.radius * 2;
-    ctx.drawImage(img, node.x - node.radius, node.y - node.radius, d, d);
+    // Implement object-fit: cover logic for canvas
+    const imgAspect = img.width / img.height;
+    const containerAspect = 1; // Circle is square container
+    
+    let drawWidth, drawHeight;
+    if (imgAspect > containerAspect) {
+      // Image is wider than container - scale by height
+      drawHeight = d;
+      drawWidth = d * imgAspect;
+    } else {
+      // Image is taller than container - scale by width
+      drawWidth = d;
+      drawHeight = d / imgAspect;
+    }
+    
+    // Center the image
+    const offsetX = node.x - drawWidth / 2;
+    const offsetY = node.y - drawHeight / 2;
+    
+    ctx.drawImage(img, offsetX, offsetY, drawWidth, drawHeight);
     ctx.restore();
   } else if (img === 'loading') {
     // Loading spinner
