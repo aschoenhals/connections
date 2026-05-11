@@ -207,12 +207,21 @@ function newId(prefix) {
 // ── Portrait image cache ───────────────────────────
 // Maps person_id → HTMLImageElement | 'loading' | 'error'
 const imageCache = new Map();
+const portraitVersions = new Map();
+
+function bustPortraitCache(personId) {
+  const nextVersion = (portraitVersions.get(personId) || 0) + 1;
+  portraitVersions.set(personId, nextVersion);
+  imageCache.delete(personId);
+}
 
 function loadPortrait(personId) {
   if (imageCache.has(personId)) return;
   imageCache.set(personId, 'loading');
 
   const prefix = auth.mindmapId ? `${auth.mindmapId}/` : '';
+  const version = portraitVersions.get(personId) || 0;
+  const versionQuery = version ? `?v=${version}` : '';
 
   const tryExtensions = (exts) => {
     if (exts.length === 0) {
@@ -226,7 +235,7 @@ function loadPortrait(personId) {
     const img = new Image();
     img.onload = () => imageCache.set(personId, img);
     img.onerror = () => tryExtensions(exts.slice(1));
-    img.src = `/portraits/${prefix}${personId}.${exts[0]}`;
+    img.src = `/portraits/${prefix}${personId}.${exts[0]}${versionQuery}`;
   };
 
   tryExtensions(['jpg', 'jpeg', 'png']);
@@ -1370,7 +1379,7 @@ personDeletePhotoBtn.addEventListener('click', async () => {
       personError.hidden = false;
       return;
     }
-    imageCache.delete(personModalNode.person_id);
+    bustPortraitCache(personModalNode.person_id);
     personPortraitPreview.src = '/portraits/placeholder.svg';
     personPhotoInput.value = '';
     personError.hidden = true;
@@ -1413,7 +1422,7 @@ personSaveBtn.addEventListener('click', async () => {
       return;
     }
     // Bust the image cache so the canvas reloads the new portrait
-    imageCache.delete(personModalNode.person_id);
+    bustPortraitCache(personModalNode.person_id);
   }
 
   // Update display name
