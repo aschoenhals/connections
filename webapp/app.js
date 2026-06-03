@@ -1,6 +1,7 @@
 const canvas = document.getElementById('mindmapCanvas');
 const ctx = canvas.getContext('2d');
 const searchInput = document.getElementById('searchInput');
+const labelsToggle = document.getElementById('labelsToggle');
 const resetBtn = document.getElementById('resetBtn');
 const addRelBtn = document.getElementById('addRelBtn');
 const relModal = document.getElementById('relModal');
@@ -114,6 +115,7 @@ const state = {
   activeNode: null,
   hoveredNode: null,
   hoveredLabelEdge: null,
+  showEdgeLabels: sessionStorage.getItem('mm_show_labels') !== '0',
   selectedNodes: new Set(),
   searchTerm: '',
   viewport: {
@@ -483,7 +485,9 @@ function drawEdge(edge) {
   ctx.restore();
 
   drawArrowHead(target.x, target.y, cx, cy, color, alpha);
-  drawEdgeLabel(edge, cx, cy, alpha);
+  if (state.showEdgeLabels) {
+    drawEdgeLabel(edge, cx, cy, alpha);
+  }
 }
 
 function drawNode(node) {
@@ -643,6 +647,7 @@ function hitTest(point) {
 }
 
 function hitTestLabel(point) {
+  if (!state.showEdgeLabels) return null;
   const worldPoint = screenToWorld(point);
   for (let i = state.edges.length - 1; i >= 0; i--) {
     const edge = state.edges[i];
@@ -815,6 +820,19 @@ searchInput.addEventListener('input', event => {
   state.searchTerm = term;
   state.activeNode = state.nodes.find(node => normalizeText(node.display_name).includes(term)) || null;
 });
+
+if (labelsToggle) {
+  labelsToggle.checked = state.showEdgeLabels;
+  labelsToggle.addEventListener('change', event => {
+    state.showEdgeLabels = Boolean(event.target.checked);
+    sessionStorage.setItem('mm_show_labels', state.showEdgeLabels ? '1' : '0');
+    if (!state.showEdgeLabels) {
+      state.hoveredLabelEdge = null;
+      labelDragInfo = null;
+      canvas.style.cursor = state.hoveredNode ? 'grab' : 'default';
+    }
+  });
+}
 
 // ── Zoom-Buttons ────────────────────────────────────
 

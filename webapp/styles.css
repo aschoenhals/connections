@@ -125,7 +125,7 @@ body {
   align-items: center;
 }
 
-.controls input,
+.controls input[type="text"],
 .controls button {
   border: 1px solid #cfcfcf;
   background: #ffffff;
@@ -137,6 +137,32 @@ body {
 
 .controls input {
   min-width: 220px;
+}
+
+.controls .control-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  border: 1px solid #cfcfcf;
+  background: #ffffff;
+  color: var(--text);
+  border-radius: 10px;
+  padding: 8px 10px;
+  font-size: 0.9rem;
+  user-select: none;
+  cursor: pointer;
+}
+
+.controls .control-toggle:hover {
+  background: #f3f4f6;
+}
+
+.controls .control-toggle input[type="checkbox"] {
+  width: 14px;
+  height: 14px;
+  margin: 0;
+  accent-color: #2563eb;
+  cursor: pointer;
 }
 
 .controls button {
