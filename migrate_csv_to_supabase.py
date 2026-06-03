@@ -73,6 +73,8 @@ def read_connections():
             to_id = row.get("to_id", "").strip()
             color = row.get("linienfarbe", row.get("color", "")).strip().lower()
             label = row.get("label", "").strip()
+            raw_dx = row.get("label_dx", "").strip()
+            raw_dy = row.get("label_dy", "").strip()
             if not rid or not from_id or not to_id:
                 continue
             connections.append(
@@ -82,6 +84,8 @@ def read_connections():
                     "to_id": to_id,
                     "color": color,
                     "label": label,
+                    "label_dx": float(raw_dx) if raw_dx else 0.0,
+                    "label_dy": float(raw_dy) if raw_dy else 0.0,
                 }
             )
     return connections

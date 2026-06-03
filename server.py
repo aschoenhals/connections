@@ -171,6 +171,8 @@ def _read_connections_csv() -> list:
             to_id = row.get("to_id", "").strip()
             color = row.get("linienfarbe", row.get("color", "")).strip().lower()
             label = row.get("label", "").strip()
+            label_dx = _parse_float(row.get("label_dx"))
+            label_dy = _parse_float(row.get("label_dy"))
             if not rid or not from_id or not to_id or color not in VALID_COLORS:
                 continue
             connections.append(
@@ -180,6 +182,8 @@ def _read_connections_csv() -> list:
                     "to_id": to_id,
                     "color": color,
                     "label": label,
+                    "label_dx": label_dx if label_dx is not None else 0.0,
+                    "label_dy": label_dy if label_dy is not None else 0.0,
                 }
             )
     return connections
@@ -188,7 +192,7 @@ def _read_connections_csv() -> list:
 def _write_connections_csv(connections: list):
     with CONNECTIONS_PATH.open("w", encoding="utf-8", newline="") as f:
         writer = csv.writer(f)
-        writer.writerow(["relation_id", "from_id", "to_id", "linienfarbe", "label"])
+        writer.writerow(["relation_id", "from_id", "to_id", "linienfarbe", "label", "label_dx", "label_dy"])
         for c in connections:
             writer.writerow([
                 c["relation_id"],
@@ -196,6 +200,8 @@ def _write_connections_csv(connections: list):
                 c["to_id"],
                 c["color"],
                 c.get("label", ""),
+                c.get("label_dx", 0.0),
+                c.get("label_dy", 0.0),
             ])
 
 
@@ -223,7 +229,7 @@ def _read_persons_supabase(mindmap_id: str) -> dict:
 def _read_connections_supabase(mindmap_id: str) -> list:
     connections = []
     resp = requests.get(
-        _supabase_rest_url("connections", f"select=relation_id,from_id,to_id,color,label&mindmap_id=eq.{mindmap_id}"),
+        _supabase_rest_url("connections", f"select=relation_id,from_id,to_id,color,label,label_dx,label_dy&mindmap_id=eq.{mindmap_id}"),
         headers=_supabase_headers(),
         timeout=10,
     )
@@ -239,6 +245,8 @@ def _read_connections_supabase(mindmap_id: str) -> list:
                 "to_id": str(row.get("to_id", "")).strip(),
                 "color": color,
                 "label": str(row.get("label", "") or "").strip(),
+                "label_dx": _parse_float(row.get("label_dx")) or 0.0,
+                "label_dy": _parse_float(row.get("label_dy")) or 0.0,
             }
         )
     return connections
@@ -413,6 +421,8 @@ def save_data():
         to_id = str(c.get("to_id", "")).strip()
         color = str(c.get("color", "")).strip().lower()
         label = str(c.get("label", "")).strip()
+        label_dx = _parse_float(c.get("label_dx"))
+        label_dy = _parse_float(c.get("label_dy"))
         if not rid or not from_id or not to_id or color not in VALID_COLORS:
             continue
         if from_id not in valid_ids or to_id not in valid_ids:
@@ -424,6 +434,8 @@ def save_data():
                 "to_id": to_id,
                 "color": color,
                 "label": label,
+                "label_dx": label_dx if label_dx is not None else 0.0,
+                "label_dy": label_dy if label_dy is not None else 0.0,
             }
         )
 

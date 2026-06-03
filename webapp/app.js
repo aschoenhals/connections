@@ -113,6 +113,7 @@ const state = {
   nodeMap: new Map(),
   activeNode: null,
   hoveredNode: null,
+  hoveredLabelEdge: null,
   selectedNodes: new Set(),
   searchTerm: '',
   viewport: {
@@ -125,6 +126,7 @@ const state = {
 };
 
 let dragInfo = null;
+let labelDragInfo = null;
 let panInfo = null;
 let dpr = Math.max(window.devicePixelRatio || 1, 1);
 
@@ -264,7 +266,9 @@ async function persist() {
     from_id:     e.from_id,
     to_id:       e.to_id,
     color:       e.color,
-    label:       e.label || ''
+    label:       e.label || '',
+    label_dx:    Number.isFinite(e.label_dx) ? Number(e.label_dx.toFixed(2)) : 0,
+    label_dy:    Number.isFinite(e.label_dy) ? Number(e.label_dy.toFixed(2)) : 0
   }));
   try {
     await apiFetch(API, {
@@ -322,7 +326,9 @@ function parseData(persons, connections) {
       target:      state.nodeMap.get(c.to_id),
       color:       c.color,
       label:       c.label || '',
-      curveOffset: (pairIndex % 2 === 0 ? 1 : -1) * (10 + Math.floor(pairIndex / 2) * 12)
+      curveOffset: (pairIndex % 2 === 0 ? 1 : -1) * (10 + Math.floor(pairIndex / 2) * 12),
+      label_dx:    Number.isFinite(toNumber(c.label_dx)) ? toNumber(c.label_dx) : 0,
+      label_dy:    Number.isFinite(toNumber(c.label_dy)) ? toNumber(c.label_dy) : 0
     };
   });
 
@@ -372,6 +378,55 @@ function quadraticPoint(p0, p1, p2, t) {
   };
 }
 
+function edgeControlPoint(edge) {
+  const { source, target } = edge;
+  const dx = target.x - source.x;
+  const dy = target.y - source.y;
+  const dist = Math.sqrt(dx * dx + dy * dy) || 1;
+  const nx = -dy / dist;
+  const ny = dx / dist;
+  const bend = Math.min(42, Math.max(16, dist * 0.16)) + edge.curveOffset;
+  const directionSeed = source.id < target.id ? 1 : -1;
+  return {
+    cx: (source.x + target.x) / 2 + nx * bend * directionSeed,
+    cy: (source.y + target.y) / 2 + ny * bend * directionSeed,
+  };
+}
+
+function edgeLabelMetrics(edge, ctrlX, ctrlY) {
+  if (!edge.label) return null;
+
+  const base = quadraticPoint(
+    { x: edge.source.x, y: edge.source.y },
+    { x: ctrlX, y: ctrlY },
+    { x: edge.target.x, y: edge.target.y },
+    0.5
+  );
+
+  const offsetX = Number.isFinite(edge.label_dx) ? edge.label_dx : 0;
+  const offsetY = Number.isFinite(edge.label_dy) ? edge.label_dy : 0;
+  const centerX = base.x + offsetX;
+  const centerY = base.y + offsetY;
+
+  ctx.save();
+  ctx.font = '600 11px Inter, sans-serif';
+  const paddingX = 8;
+  const width = ctx.measureText(edge.label).width + paddingX * 2;
+  ctx.restore();
+
+  const height = 20;
+  return {
+    centerX,
+    centerY,
+    width,
+    height,
+    x: centerX - width / 2,
+    y: centerY - height / 2,
+    baseX: base.x,
+    baseY: base.y,
+  };
+}
+
 function drawArrowHead(tipX, tipY, ctrlX, ctrlY, color, alpha) {
   const angle = Math.atan2(tipY - ctrlY, tipX - ctrlX);
   const size = 8;
@@ -389,14 +444,8 @@ function drawArrowHead(tipX, tipY, ctrlX, ctrlY, color, alpha) {
 }
 
 function drawEdgeLabel(edge, ctrlX, ctrlY, alpha) {
-  if (!edge.label) return;
-
-  const point = quadraticPoint(
-    { x: edge.source.x, y: edge.source.y },
-    { x: ctrlX, y: ctrlY },
-    { x: edge.target.x, y: edge.target.y },
-    0.5
-  );
+  const metrics = edgeLabelMetrics(edge, ctrlX, ctrlY);
+  if (!metrics) return;
 
   ctx.save();
   ctx.globalAlpha = alpha;
@@ -404,35 +453,19 @@ function drawEdgeLabel(edge, ctrlX, ctrlY, alpha) {
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
 
-  const paddingX = 8;
-  const width = ctx.measureText(edge.label).width + paddingX * 2;
-  const height = 20;
-  const x = point.x - width / 2;
-  const y = point.y - height / 2;
-
-  ctx.fillStyle = 'rgba(255, 255, 255, 0.96)';
+  ctx.fillStyle = '#ffffff';
   ctx.beginPath();
-  ctx.roundRect(x, y, width, height, 8);
+  ctx.roundRect(metrics.x, metrics.y, metrics.width, metrics.height, 8);
   ctx.fill();
 
-  ctx.strokeStyle = 'rgba(0,0,0,0.18)';
-  ctx.stroke();
   ctx.fillStyle = '#000000';
-  ctx.fillText(edge.label, point.x, point.y + 0.5);
+  ctx.fillText(edge.label, metrics.centerX, metrics.centerY + 0.5);
   ctx.restore();
 }
 
 function drawEdge(edge) {
   const { source, target } = edge;
-  const dx = target.x - source.x;
-  const dy = target.y - source.y;
-  const dist = Math.sqrt(dx * dx + dy * dy) || 1;
-  const nx = -dy / dist;
-  const ny = dx / dist;
-  const bend = Math.min(42, Math.max(16, dist * 0.16)) + edge.curveOffset;
-  const directionSeed = source.id < target.id ? 1 : -1;
-  const cx = (source.x + target.x) / 2 + nx * bend * directionSeed;
-  const cy = (source.y + target.y) / 2 + ny * bend * directionSeed;
+  const { cx, cy } = edgeControlPoint(edge);
   const color = COLORS[edge.color];
   const edgeMatchesSearch = state.searchTerm &&
     (normalizeText(source.display_name).includes(state.searchTerm) ||
@@ -609,9 +642,46 @@ function hitTest(point) {
   return null;
 }
 
+function hitTestLabel(point) {
+  const worldPoint = screenToWorld(point);
+  for (let i = state.edges.length - 1; i >= 0; i--) {
+    const edge = state.edges[i];
+    if (!edge.label) continue;
+    const { cx, cy } = edgeControlPoint(edge);
+    const metrics = edgeLabelMetrics(edge, cx, cy);
+    if (!metrics) continue;
+    if (
+      worldPoint.x >= metrics.x &&
+      worldPoint.x <= metrics.x + metrics.width &&
+      worldPoint.y >= metrics.y &&
+      worldPoint.y <= metrics.y + metrics.height
+    ) {
+      return { edge, metrics };
+    }
+  }
+  return null;
+}
+
 canvas.addEventListener('pointerdown', event => {
   const point = getPointerPosition(event);
+  const labelHit = hitTestLabel(point);
   const node = hitTest(point);
+
+  if (event.button === 0 && labelHit && !event.shiftKey) {
+    const worldPoint = screenToWorld(point);
+    labelDragInfo = {
+      edge: labelHit.edge,
+      startWorldX: worldPoint.x,
+      startWorldY: worldPoint.y,
+      startLabelDx: Number.isFinite(labelHit.edge.label_dx) ? labelHit.edge.label_dx : 0,
+      startLabelDy: Number.isFinite(labelHit.edge.label_dy) ? labelHit.edge.label_dy : 0,
+      moved: false,
+    };
+    canvas.style.cursor = 'grabbing';
+    canvas.setPointerCapture(event.pointerId);
+    event.preventDefault();
+    return;
+  }
 
   if (event.button === 1 || (event.button === 0 && !node)) {
     // Shift+click on empty area clears selection
@@ -663,6 +733,18 @@ canvas.addEventListener('pointerdown', event => {
 canvas.addEventListener('pointermove', event => {
   const point = getPointerPosition(event);
 
+  if (labelDragInfo) {
+    const worldPoint = screenToWorld(point);
+    const nextDx = labelDragInfo.startLabelDx + (worldPoint.x - labelDragInfo.startWorldX);
+    const nextDy = labelDragInfo.startLabelDy + (worldPoint.y - labelDragInfo.startWorldY);
+    if (Math.abs(nextDx - labelDragInfo.startLabelDx) > 0.01 || Math.abs(nextDy - labelDragInfo.startLabelDy) > 0.01) {
+      labelDragInfo.moved = true;
+    }
+    labelDragInfo.edge.label_dx = nextDx;
+    labelDragInfo.edge.label_dy = nextDy;
+    return;
+  }
+
   if (dragInfo) {
     const worldPoint = screenToWorld(point);
     const moved = dragInfo.dragNodes.some((n, i) => {
@@ -688,26 +770,32 @@ canvas.addEventListener('pointermove', event => {
     return;
   }
 
+  const labelHit = hitTestLabel(point);
+  state.hoveredLabelEdge = labelHit ? labelHit.edge : null;
   state.hoveredNode = hitTest(point);
-  canvas.style.cursor = state.hoveredNode ? 'grab' : 'default';
+  canvas.style.cursor = state.hoveredLabelEdge ? 'grab' : state.hoveredNode ? 'grab' : 'default';
 });
 
 canvas.addEventListener('pointerup', event => {
-  const shouldPersist = Boolean(dragInfo && dragInfo.moved);
+  const shouldPersist = Boolean((dragInfo && dragInfo.moved) || (labelDragInfo && labelDragInfo.moved));
   dragInfo = null;
+  labelDragInfo = null;
   panInfo = null;
   if (canvas.hasPointerCapture(event.pointerId)) {
     canvas.releasePointerCapture(event.pointerId);
   }
-  canvas.style.cursor = state.hoveredNode ? 'grab' : 'default';
+  canvas.style.cursor = state.hoveredLabelEdge || state.hoveredNode ? 'grab' : 'default';
   if (shouldPersist) {
     persist();
   }
 });
 
 canvas.addEventListener('pointerleave', () => {
-  if (!dragInfo) state.hoveredNode = null;
-  if (!dragInfo && !panInfo) canvas.style.cursor = 'default';
+  if (!dragInfo && !labelDragInfo) {
+    state.hoveredNode = null;
+    state.hoveredLabelEdge = null;
+  }
+  if (!dragInfo && !labelDragInfo && !panInfo) canvas.style.cursor = 'default';
 });
 
 canvas.addEventListener('wheel', event => {
@@ -1118,7 +1206,9 @@ function addRelationship() {
     target:      targetNode,
     color,
     label,
-    curveOffset
+    curveOffset,
+    label_dx:    0,
+    label_dy:    0
   });
 
   closeModal();

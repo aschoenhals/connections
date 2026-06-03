@@ -12,6 +12,8 @@ create table if not exists public.connections (
   to_id text not null references public.persons(person_id) on delete cascade,
   color text not null check (color in ('rot', 'blau', 'orange')),
   label text not null default '',
+  label_dx double precision not null default 0,
+  label_dy double precision not null default 0,
   updated_at timestamptz not null default now()
 );
 
