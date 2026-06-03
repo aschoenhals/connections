@@ -127,6 +127,11 @@ def _raise_for_supabase_error(resp: requests.Response, fallback: str):
     raise RuntimeError(f"{message} (HTTP {resp.status_code})")
 
 
+def _is_missing_label_offset_column_error(err: Exception) -> bool:
+    msg = str(err).lower()
+    return "column" in msg and ("label_dx" in msg or "label_dy" in msg)
+
+
 def _read_persons_csv() -> dict:
     persons: dict = {}
     if not PERSONS_PATH.exists():
@@ -228,12 +233,23 @@ def _read_persons_supabase(mindmap_id: str) -> dict:
 
 def _read_connections_supabase(mindmap_id: str) -> list:
     connections = []
-    resp = requests.get(
-        _supabase_rest_url("connections", f"select=relation_id,from_id,to_id,color,label,label_dx,label_dy&mindmap_id=eq.{mindmap_id}"),
-        headers=_supabase_headers(),
-        timeout=10,
-    )
-    _raise_for_supabase_error(resp, "Failed to load connections")
+    try:
+        resp = requests.get(
+            _supabase_rest_url("connections", f"select=relation_id,from_id,to_id,color,label,label_dx,label_dy&mindmap_id=eq.{mindmap_id}"),
+            headers=_supabase_headers(),
+            timeout=10,
+        )
+        _raise_for_supabase_error(resp, "Failed to load connections")
+    except RuntimeError as err:
+        if not _is_missing_label_offset_column_error(err):
+            raise
+        # Backward compatibility for instances where migration_v3 was not run yet.
+        resp = requests.get(
+            _supabase_rest_url("connections", f"select=relation_id,from_id,to_id,color,label&mindmap_id=eq.{mindmap_id}"),
+            headers=_supabase_headers(),
+            timeout=10,
+        )
+        _raise_for_supabase_error(resp, "Failed to load connections")
     for row in resp.json():
         color = str(row.get("color", "")).strip().lower()
         if color not in VALID_COLORS:
@@ -279,13 +295,36 @@ def _write_all_supabase(persons: dict, connections: list, mindmap_id: str):
 
     if connections:
         connections_with_mid = [{**c, "mindmap_id": mindmap_id} for c in connections]
-        resp = requests.post(
-            _supabase_rest_url("connections"),
-            headers={**_supabase_headers("application/json"), "Prefer": "return=minimal"},
-            json=connections_with_mid,
-            timeout=15,
-        )
-        _raise_for_supabase_error(resp, "Failed to write connections")
+        try:
+            resp = requests.post(
+                _supabase_rest_url("connections"),
+                headers={**_supabase_headers("application/json"), "Prefer": "return=minimal"},
+                json=connections_with_mid,
+                timeout=15,
+            )
+            _raise_for_supabase_error(resp, "Failed to write connections")
+        except RuntimeError as err:
+            if not _is_missing_label_offset_column_error(err):
+                raise
+            # Backward compatibility for instances where migration_v3 was not run yet.
+            legacy_connections = [
+                {
+                    "relation_id": c.get("relation_id"),
+                    "from_id": c.get("from_id"),
+                    "to_id": c.get("to_id"),
+                    "color": c.get("color"),
+                    "label": c.get("label", ""),
+                    "mindmap_id": c.get("mindmap_id", mindmap_id),
+                }
+                for c in connections_with_mid
+            ]
+            resp = requests.post(
+                _supabase_rest_url("connections"),
+                headers={**_supabase_headers("application/json"), "Prefer": "return=minimal"},
+                json=legacy_connections,
+                timeout=15,
+            )
+            _raise_for_supabase_error(resp, "Failed to write connections")
 
 
 def _get_mindmap_supabase(mindmap_id: str) -> dict | None:
