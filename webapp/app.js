@@ -901,7 +901,7 @@ async function waitForPortraitReady(personId, timeoutMs = 3500) {
 }
 
 function chooseExportCanvasSize(pageWidthMm, pageHeightMm) {
-  const candidateDpi = [180, 150, 120, 96];
+  const candidateDpi = [140, 120, 96, 72];
   const maxPixels = 28000000;
   const maxSide = 10000;
 

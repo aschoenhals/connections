@@ -7,7 +7,7 @@ import time
 from pathlib import Path
 
 import requests
-from flask import Flask, jsonify, redirect, request, send_from_directory
+from flask import Flask, Response, jsonify, request, send_from_directory
 from flask_cors import CORS
 from werkzeug.security import check_password_hash, generate_password_hash
 
@@ -410,7 +410,20 @@ def get_portrait(filename: str):
     if filename == "placeholder.svg":
         return send_from_directory(PORTRAITS_DIR, filename)
     if USE_SUPABASE_STORAGE:
-        return redirect(_supabase_object_public_url(filename), code=302)
+        try:
+            upstream = requests.get(_supabase_object_public_url(filename), timeout=12)
+        except requests.RequestException:
+            return jsonify({"error": "Portrait could not be loaded"}), 502
+
+        if upstream.status_code == 404:
+            return jsonify({"error": "Portrait not found"}), 404
+        if not upstream.ok:
+            return jsonify({"error": "Portrait upstream error"}), 502
+
+        content_type = upstream.headers.get("content-type", "application/octet-stream")
+        response = Response(upstream.content, status=200, content_type=content_type)
+        response.headers["Cache-Control"] = upstream.headers.get("cache-control", "public, max-age=3600")
+        return response
     return send_from_directory(PORTRAITS_DIR, filename)
 
 
