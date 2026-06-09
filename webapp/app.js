@@ -73,6 +73,7 @@ const editDeleteBtn = document.getElementById('editDeleteBtn');
 const zoomInBtn = document.getElementById('zoomInBtn');
 const zoomOutBtn = document.getElementById('zoomOutBtn');
 const centerizeBtn = document.getElementById('centerizeBtn');
+const exportPdfBtn = document.getElementById('exportPdfBtn');
 const personModal = document.getElementById('personModal');
 const personName = document.getElementById('personName');
 const personPhotoInput = document.getElementById('personPhotoInput');
@@ -625,6 +626,374 @@ function animate() {
   requestAnimationFrame(animate);
 }
 
+function getContentBounds() {
+  if (state.nodes.length === 0) {
+    return { minX: 0, minY: 0, maxX: 1, maxY: 1, width: 1, height: 1 };
+  }
+
+  let minX = Infinity;
+  let maxX = -Infinity;
+  let minY = Infinity;
+  let maxY = -Infinity;
+
+  for (const n of state.nodes) {
+    minX = Math.min(minX, n.x - n.radius - 20);
+    maxX = Math.max(maxX, n.x + n.radius + 20);
+    minY = Math.min(minY, n.y - n.radius - 20);
+    maxY = Math.max(maxY, n.y + n.radius + 56);
+  }
+
+  if (state.showEdgeLabels) {
+    for (const edge of state.edges) {
+      if (!edge.label) continue;
+      const { cx, cy } = edgeControlPoint(edge);
+      const base = quadraticPoint(
+        { x: edge.source.x, y: edge.source.y },
+        { x: cx, y: cy },
+        { x: edge.target.x, y: edge.target.y },
+        0.5
+      );
+      const labelX = base.x + (Number.isFinite(edge.label_dx) ? edge.label_dx : 0);
+      const labelY = base.y + (Number.isFinite(edge.label_dy) ? edge.label_dy : 0);
+      const labelWidth = Math.max(36, edge.label.length * 7 + 16);
+      const labelHeight = 22;
+      minX = Math.min(minX, labelX - labelWidth / 2 - 4);
+      maxX = Math.max(maxX, labelX + labelWidth / 2 + 4);
+      minY = Math.min(minY, labelY - labelHeight / 2 - 4);
+      maxY = Math.max(maxY, labelY + labelHeight / 2 + 4);
+    }
+  }
+
+  const width = Math.max(1, maxX - minX);
+  const height = Math.max(1, maxY - minY);
+  return { minX, minY, maxX, maxY, width, height };
+}
+
+function exportViewportFromBounds(bounds, pixelWidth, pixelHeight, paddingPx = 120) {
+  const usableWidth = Math.max(1, pixelWidth - paddingPx * 2);
+  const usableHeight = Math.max(1, pixelHeight - paddingPx * 2);
+  const scale = Math.min(usableWidth / bounds.width, usableHeight / bounds.height);
+
+  const renderedWidth = bounds.width * scale;
+  const renderedHeight = bounds.height * scale;
+  const offsetX = (pixelWidth - renderedWidth) / 2;
+  const offsetY = (pixelHeight - renderedHeight) / 2;
+
+  return {
+    x: offsetX - bounds.minX * scale,
+    y: offsetY - bounds.minY * scale,
+    scale,
+  };
+}
+
+function edgeLabelMetricsForContext(edge, ctrlX, ctrlY, drawCtx) {
+  if (!edge.label) return null;
+
+  const base = quadraticPoint(
+    { x: edge.source.x, y: edge.source.y },
+    { x: ctrlX, y: ctrlY },
+    { x: edge.target.x, y: edge.target.y },
+    0.5
+  );
+
+  const offsetX = Number.isFinite(edge.label_dx) ? edge.label_dx : 0;
+  const offsetY = Number.isFinite(edge.label_dy) ? edge.label_dy : 0;
+  const centerX = base.x + offsetX;
+  const centerY = base.y + offsetY;
+
+  drawCtx.save();
+  drawCtx.font = '600 11px Inter, sans-serif';
+  const width = drawCtx.measureText(edge.label).width + 16;
+  drawCtx.restore();
+
+  const height = 20;
+  return {
+    centerX,
+    centerY,
+    width,
+    height,
+    x: centerX - width / 2,
+    y: centerY - height / 2,
+  };
+}
+
+function drawArrowHeadOnContext(drawCtx, tipX, tipY, ctrlX, ctrlY, color, alpha) {
+  const angle = Math.atan2(tipY - ctrlY, tipX - ctrlX);
+  const size = 8;
+
+  drawCtx.save();
+  drawCtx.globalAlpha = alpha;
+  drawCtx.fillStyle = color;
+  drawCtx.beginPath();
+  drawCtx.moveTo(tipX, tipY);
+  drawCtx.lineTo(tipX - Math.cos(angle - Math.PI / 6) * size, tipY - Math.sin(angle - Math.PI / 6) * size);
+  drawCtx.lineTo(tipX - Math.cos(angle + Math.PI / 6) * size, tipY - Math.sin(angle + Math.PI / 6) * size);
+  drawCtx.closePath();
+  drawCtx.fill();
+  drawCtx.restore();
+}
+
+function wrapTextOnContext(drawCtx, text, x, y, maxWidth, lineHeight) {
+  const words = text.split(' ');
+  let line = '';
+  const lines = [];
+
+  for (const word of words) {
+    const testLine = line ? `${line} ${word}` : word;
+    if (drawCtx.measureText(testLine).width > maxWidth && line) {
+      lines.push(line);
+      line = word;
+    } else {
+      line = testLine;
+    }
+  }
+  if (line) lines.push(line);
+
+  lines.forEach((entry, index) => {
+    drawCtx.fillStyle = '#000000';
+    drawCtx.fillText(entry, x, y + index * lineHeight);
+  });
+}
+
+function drawSceneOnContext(drawCtx, viewport, options = {}) {
+  const showLabels = options.showLabels ?? state.showEdgeLabels;
+  const searchTerm = options.searchTerm || '';
+  const activeNode = options.activeNode || null;
+  const selectedNodes = options.selectedNodes || new Set();
+
+  drawCtx.save();
+  drawCtx.translate(viewport.x, viewport.y);
+  drawCtx.scale(viewport.scale, viewport.scale);
+
+  for (const edge of state.edges) {
+    const { source, target } = edge;
+    const { cx, cy } = edgeControlPoint(edge);
+    const color = COLORS[edge.color];
+    const edgeMatchesSearch = searchTerm &&
+      (normalizeText(source.display_name).includes(searchTerm) || normalizeText(target.display_name).includes(searchTerm));
+    const alpha = searchTerm && !edgeMatchesSearch ? 0.18 : 0.72;
+
+    drawCtx.save();
+    drawCtx.strokeStyle = color;
+    drawCtx.lineWidth = activeNode && source !== activeNode && target !== activeNode ? 1.2 : 2.2;
+    drawCtx.globalAlpha = alpha;
+    drawCtx.beginPath();
+    drawCtx.moveTo(source.x, source.y);
+    drawCtx.quadraticCurveTo(cx, cy, target.x, target.y);
+    drawCtx.stroke();
+    drawCtx.restore();
+
+    drawArrowHeadOnContext(drawCtx, target.x, target.y, cx, cy, color, alpha);
+
+    if (showLabels) {
+      const metrics = edgeLabelMetricsForContext(edge, cx, cy, drawCtx);
+      if (metrics) {
+        drawCtx.save();
+        drawCtx.globalAlpha = alpha;
+        drawCtx.font = '600 11px Inter, sans-serif';
+        drawCtx.textAlign = 'center';
+        drawCtx.textBaseline = 'middle';
+        drawCtx.fillStyle = '#ffffff';
+        drawCtx.beginPath();
+        drawCtx.roundRect(metrics.x, metrics.y, metrics.width, metrics.height, 8);
+        drawCtx.fill();
+        drawCtx.fillStyle = '#000000';
+        drawCtx.fillText(edge.label, metrics.centerX, metrics.centerY + 0.5);
+        drawCtx.restore();
+      }
+    }
+  }
+
+  for (const node of state.nodes) {
+    const isActive = activeNode === node;
+    const isSelected = selectedNodes.has(node);
+    const isDimmed = Boolean(searchTerm) && !normalizeText(node.display_name).includes(searchTerm);
+
+    const img = imageCache.get(node.person_id);
+    const hasImage = img && img !== 'loading' && img !== 'error';
+
+    drawCtx.save();
+    drawCtx.globalAlpha = isDimmed ? 0.28 : 1;
+
+    drawCtx.beginPath();
+    drawCtx.arc(node.x, node.y, node.radius + (isActive ? 5 : 0), 0, Math.PI * 2);
+    drawCtx.fillStyle = isActive ? 'rgba(0,0,0,0.10)' : 'rgba(0,0,0,0.04)';
+    drawCtx.fill();
+
+    if (hasImage) {
+      drawCtx.save();
+      drawCtx.beginPath();
+      drawCtx.arc(node.x, node.y, node.radius, 0, Math.PI * 2);
+      drawCtx.clip();
+
+      const d = node.radius * 2;
+      const imgAspect = img.width / img.height;
+      const containerAspect = 1;
+      let drawWidth;
+      let drawHeight;
+      if (imgAspect > containerAspect) {
+        drawHeight = d;
+        drawWidth = d * imgAspect;
+      } else {
+        drawWidth = d;
+        drawHeight = d / imgAspect;
+      }
+      const offsetX = node.x - drawWidth / 2;
+      const offsetY = node.y - drawHeight / 2;
+      drawCtx.drawImage(img, offsetX, offsetY, drawWidth, drawHeight);
+      drawCtx.restore();
+    } else {
+      drawCtx.beginPath();
+      drawCtx.arc(node.x, node.y, node.radius, 0, Math.PI * 2);
+      drawCtx.fillStyle = node.fill;
+      drawCtx.fill();
+      drawCtx.fillStyle = '#000000';
+      drawCtx.font = 'bold 13px Inter, sans-serif';
+      drawCtx.textAlign = 'center';
+      drawCtx.textBaseline = 'middle';
+      drawCtx.fillText(node.initials, node.x, node.y + 0.5);
+    }
+
+    drawCtx.beginPath();
+    drawCtx.arc(node.x, node.y, node.radius, 0, Math.PI * 2);
+    drawCtx.lineWidth = isActive ? 3 : isSelected ? 2.5 : 1.5;
+    drawCtx.strokeStyle = isSelected ? '#2563eb' : isActive ? '#000000' : 'rgba(0,0,0,0.45)';
+    drawCtx.stroke();
+
+    if (isSelected) {
+      drawCtx.beginPath();
+      drawCtx.arc(node.x, node.y, node.radius + 5, 0, Math.PI * 2);
+      drawCtx.lineWidth = 2;
+      drawCtx.strokeStyle = 'rgba(37,99,235,0.35)';
+      drawCtx.stroke();
+    }
+
+    drawCtx.fillStyle = '#000000';
+    drawCtx.textAlign = 'center';
+    drawCtx.font = isActive ? '600 12px Inter, sans-serif' : '500 12px Inter, sans-serif';
+    drawCtx.textBaseline = 'top';
+    wrapTextOnContext(drawCtx, node.display_name, node.x, node.y + node.radius + 10, 120, 14);
+    drawCtx.restore();
+  }
+
+  drawCtx.restore();
+}
+
+async function waitForPortraitReady(personId, timeoutMs = 3500) {
+  loadPortrait(personId);
+
+  return new Promise(resolve => {
+    const startedAt = performance.now();
+    function check() {
+      const img = imageCache.get(personId);
+      if (img && img !== 'loading') {
+        resolve();
+        return;
+      }
+      if (performance.now() - startedAt >= timeoutMs) {
+        resolve();
+        return;
+      }
+      requestAnimationFrame(check);
+    }
+    check();
+  });
+}
+
+async function exportMindmapDinA0Pdf() {
+  if (!window.jspdf || !window.jspdf.jsPDF) {
+    alert('PDF-Bibliothek ist nicht geladen. Bitte Seite neu laden.');
+    return;
+  }
+  if (state.nodes.length === 0) {
+    alert('Keine Daten vorhanden, die exportiert werden koennen.');
+    return;
+  }
+
+  if (exportPdfBtn) {
+    exportPdfBtn.disabled = true;
+    exportPdfBtn.textContent = 'Export ...';
+  }
+
+  try {
+    await Promise.all(state.nodes.map(node => waitForPortraitReady(node.person_id)));
+
+    const bounds = getContentBounds();
+    const orientation = bounds.width >= bounds.height ? 'landscape' : 'portrait';
+    const pageWidthMm = orientation === 'landscape' ? 1189 : 841;
+    const pageHeightMm = orientation === 'landscape' ? 841 : 1189;
+    const candidateDpi = [300, 240, 200];
+
+    let exportCanvas = null;
+    let exportCtx = null;
+    let pixelWidth = 0;
+    let pixelHeight = 0;
+    let usedDpi = candidateDpi[candidateDpi.length - 1];
+
+    for (const dpi of candidateDpi) {
+      const testWidth = Math.round((pageWidthMm / 25.4) * dpi);
+      const testHeight = Math.round((pageHeightMm / 25.4) * dpi);
+      try {
+        const candidate = document.createElement('canvas');
+        candidate.width = testWidth;
+        candidate.height = testHeight;
+        const candidateCtx = candidate.getContext('2d', { alpha: false });
+        if (!candidateCtx) continue;
+        candidateCtx.fillStyle = '#ffffff';
+        candidateCtx.fillRect(0, 0, testWidth, testHeight);
+        exportCanvas = candidate;
+        exportCtx = candidateCtx;
+        pixelWidth = testWidth;
+        pixelHeight = testHeight;
+        usedDpi = dpi;
+        break;
+      } catch {
+        // Try next lower DPI if browser cannot allocate enough memory.
+      }
+    }
+
+    if (!exportCanvas || !exportCtx) {
+      throw new Error('Kein Export-Canvas verfuegbar');
+    }
+
+    exportCtx.fillStyle = '#ffffff';
+    exportCtx.fillRect(0, 0, pixelWidth, pixelHeight);
+
+    const exportViewport = exportViewportFromBounds(bounds, pixelWidth, pixelHeight, Math.max(80, Math.round(pixelWidth * 0.03)));
+    drawSceneOnContext(exportCtx, exportViewport, {
+      showLabels: state.showEdgeLabels,
+      searchTerm: '',
+      activeNode: null,
+      selectedNodes: new Set(),
+    });
+
+    const imageData = exportCanvas.toDataURL('image/jpeg', 0.98);
+    const { jsPDF } = window.jspdf;
+    const doc = new jsPDF({
+      orientation,
+      unit: 'mm',
+      format: [pageWidthMm, pageHeightMm],
+      compress: true,
+    });
+    doc.addImage(imageData, 'JPEG', 0, 0, pageWidthMm, pageHeightMm, undefined, 'FAST');
+
+    const baseName = (auth.mindmapName || auth.mindmapId || 'mindmap')
+      .toLowerCase()
+      .replace(/[^a-z0-9-]+/g, '-')
+      .replace(/-+/g, '-')
+      .replace(/^-|-$/g, '') || 'mindmap';
+    doc.save(`${baseName}-din-a0-${usedDpi}dpi.pdf`);
+  } catch (err) {
+    console.error('PDF-Export fehlgeschlagen:', err);
+    alert('PDF-Export fehlgeschlagen. Bitte erneut versuchen.');
+  } finally {
+    if (exportPdfBtn) {
+      exportPdfBtn.disabled = false;
+      exportPdfBtn.textContent = 'PDF A0';
+    }
+  }
+}
+
 function getPointerPosition(event) {
   const rect = canvas.getBoundingClientRect();
   return {
@@ -872,6 +1241,7 @@ function smoothZoom(factor, durationMs = 220) {
 zoomInBtn.addEventListener('click',  () => smoothZoom(1.4));
 zoomOutBtn.addEventListener('click', () => smoothZoom(1 / 1.4));
 centerizeBtn.addEventListener('click', () => centerize(true));
+if (exportPdfBtn) exportPdfBtn.addEventListener('click', () => { exportMindmapDinA0Pdf(); });
 
 function centerize(animated = true, durationMs = 300) {
   if (state.nodes.length === 0) return;
