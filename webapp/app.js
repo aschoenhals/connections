@@ -980,7 +980,8 @@ function wrapPdfText(doc, text, x, y, maxWidth, lineHeight) {
 function drawPdfEdge(doc, edge, viewport) {
   const source = pdfPoint(edge.source, viewport);
   const target = pdfPoint(edge.target, viewport);
-  const control = pdfPoint(edgeControlPoint(edge), viewport);
+  const controlPoint = edgeControlPoint(edge);
+  const control = pdfPoint({ x: controlPoint.cx, y: controlPoint.cy }, viewport);
   const color = COLORS[edge.color];
 
   const segments = 20;
