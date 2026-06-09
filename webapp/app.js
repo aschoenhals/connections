@@ -879,25 +879,170 @@ function drawSceneOnContext(drawCtx, viewport, options = {}) {
   drawCtx.restore();
 }
 
-async function waitForPortraitReady(personId, timeoutMs = 3500) {
-  loadPortrait(personId);
+function hslStringToRgbColor(hslText) {
+  const match = String(hslText).match(/hsl\(\s*([\d.]+)\s+([\d.]+)%\s+([\d.]+)%\s*\)/i);
+  if (!match) return [255, 255, 255];
+  const h = ((Number(match[1]) % 360) + 360) % 360;
+  const s = clamp(Number(match[2]) / 100, 0, 1);
+  const l = clamp(Number(match[3]) / 100, 0, 1);
 
-  return new Promise(resolve => {
-    const startedAt = performance.now();
-    function check() {
-      const img = imageCache.get(personId);
-      if (img && img !== 'loading') {
-        resolve();
-        return;
-      }
-      if (performance.now() - startedAt >= timeoutMs) {
-        resolve();
-        return;
-      }
-      requestAnimationFrame(check);
+  const c = (1 - Math.abs(2 * l - 1)) * s;
+  const x = c * (1 - Math.abs((h / 60) % 2 - 1));
+  const m = l - c / 2;
+  let r1 = 0;
+  let g1 = 0;
+  let b1 = 0;
+
+  if (h < 60) [r1, g1, b1] = [c, x, 0];
+  else if (h < 120) [r1, g1, b1] = [x, c, 0];
+  else if (h < 180) [r1, g1, b1] = [0, c, x];
+  else if (h < 240) [r1, g1, b1] = [0, x, c];
+  else if (h < 300) [r1, g1, b1] = [x, 0, c];
+  else [r1, g1, b1] = [c, 0, x];
+
+  return [
+    Math.round((r1 + m) * 255),
+    Math.round((g1 + m) * 255),
+    Math.round((b1 + m) * 255),
+  ];
+}
+
+function pdfViewportFromBounds(bounds, pageWidthMm, pageHeightMm, marginMm = 18) {
+  const usableWidth = Math.max(1, pageWidthMm - marginMm * 2);
+  const usableHeight = Math.max(1, pageHeightMm - marginMm * 2);
+  const scale = Math.min(usableWidth / bounds.width, usableHeight / bounds.height);
+  const drawWidth = bounds.width * scale;
+  const drawHeight = bounds.height * scale;
+  const offsetX = (pageWidthMm - drawWidth) / 2;
+  const offsetY = (pageHeightMm - drawHeight) / 2;
+
+  return {
+    x: offsetX - bounds.minX * scale,
+    y: offsetY - bounds.minY * scale,
+    scale,
+    marginMm,
+  };
+}
+
+function pdfPoint(point, viewport) {
+  return {
+    x: point.x * viewport.scale + viewport.x,
+    y: point.y * viewport.scale + viewport.y,
+  };
+}
+
+function quadraticPdfPoint(p0, p1, p2, t) {
+  const mt = 1 - t;
+  return {
+    x: mt * mt * p0.x + 2 * mt * t * p1.x + t * t * p2.x,
+    y: mt * mt * p0.y + 2 * mt * t * p1.y + t * t * p2.y,
+  };
+}
+
+function drawPdfArrow(doc, tip, ctrl, color, scale) {
+  const angle = Math.atan2(tip.y - ctrl.y, tip.x - ctrl.x);
+  const size = Math.max(2.4, 3.2 * scale);
+  const left = {
+    x: tip.x - Math.cos(angle - Math.PI / 6) * size,
+    y: tip.y - Math.sin(angle - Math.PI / 6) * size,
+  };
+  const right = {
+    x: tip.x - Math.cos(angle + Math.PI / 6) * size,
+    y: tip.y - Math.sin(angle + Math.PI / 6) * size,
+  };
+
+  doc.setDrawColor(...color);
+  doc.setFillColor(...color);
+  doc.triangle(tip.x, tip.y, left.x, left.y, right.x, right.y, 'F');
+}
+
+function wrapPdfText(doc, text, x, y, maxWidth, lineHeight) {
+  const words = String(text).split(' ');
+  let line = '';
+  const lines = [];
+
+  for (const word of words) {
+    const testLine = line ? `${line} ${word}` : word;
+    if (doc.getTextWidth(testLine) > maxWidth && line) {
+      lines.push(line);
+      line = word;
+    } else {
+      line = testLine;
     }
-    check();
+  }
+  if (line) lines.push(line);
+
+  lines.forEach((entry, index) => {
+    doc.text(entry, x, y + index * lineHeight, { align: 'center' });
   });
+}
+
+function drawPdfEdge(doc, edge, viewport) {
+  const source = pdfPoint(edge.source, viewport);
+  const target = pdfPoint(edge.target, viewport);
+  const control = pdfPoint(edgeControlPoint(edge), viewport);
+  const color = COLORS[edge.color];
+
+  const segments = 20;
+  const points = [];
+  for (let i = 0; i <= segments; i++) {
+    points.push(quadraticPdfPoint(source, control, target, i / segments));
+  }
+
+  doc.setDrawColor(...color);
+  doc.setLineWidth(Math.max(0.35, 0.65 * viewport.scale));
+  for (let i = 0; i < points.length - 1; i++) {
+    doc.line(points[i].x, points[i].y, points[i + 1].x, points[i + 1].y);
+  }
+
+  drawPdfArrow(doc, target, control, color, viewport.scale);
+
+  if (!edge.label) return;
+
+  const midpoint = quadraticPdfPoint(source, control, target, 0.5);
+  const labelX = midpoint.x + (Number.isFinite(edge.label_dx) ? edge.label_dx * viewport.scale : 0);
+  const labelY = midpoint.y + (Number.isFinite(edge.label_dy) ? edge.label_dy * viewport.scale : 0);
+  const padding = 1.6;
+  const fontSize = Math.max(6.5, 8 * viewport.scale);
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(fontSize);
+  const textWidth = doc.getTextWidth(edge.label);
+  const boxWidth = textWidth + padding * 2;
+  const boxHeight = fontSize * 0.42 + padding * 2;
+
+  doc.setDrawColor(255, 255, 255);
+  doc.setFillColor(255, 255, 255);
+  doc.roundedRect(labelX - boxWidth / 2, labelY - boxHeight / 2, boxWidth, boxHeight, 1.8, 1.8, 'FD');
+  doc.setTextColor(0, 0, 0);
+  doc.text(edge.label, labelX, labelY + fontSize * 0.22, { align: 'center' });
+}
+
+function drawPdfNode(doc, node, viewport) {
+  const center = pdfPoint(node, viewport);
+  const radius = node.radius * viewport.scale;
+  const hasImage = false;
+
+  doc.setDrawColor(0, 0, 0);
+  doc.setLineWidth(Math.max(0.35, node === state.activeNode ? 0.8 : 0.45));
+
+  if (hasImage) {
+    // Reserved for a future image-based export path.
+  } else {
+    const [r, g, b] = hslStringToRgbColor(node.fill);
+    doc.setFillColor(r, g, b);
+    doc.circle(center.x, center.y, radius, 'F');
+    doc.setTextColor(0, 0, 0);
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(Math.max(6.5, 9 * viewport.scale));
+    doc.text(node.initials, center.x, center.y + doc.getFontSize() * 0.24, { align: 'center' });
+  }
+
+  doc.circle(center.x, center.y, radius, 'S');
+
+  doc.setTextColor(0, 0, 0);
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(Math.max(7, 8.5 * viewport.scale));
+  wrapPdfText(doc, node.display_name, center.x, center.y + radius + 4, 28 * viewport.scale, 3.6 * viewport.scale);
 }
 
 async function exportMindmapDinA0Pdf() {
@@ -916,58 +1061,10 @@ async function exportMindmapDinA0Pdf() {
   }
 
   try {
-    await Promise.all(state.nodes.map(node => waitForPortraitReady(node.person_id)));
-
     const bounds = getContentBounds();
     const orientation = bounds.width >= bounds.height ? 'landscape' : 'portrait';
     const pageWidthMm = orientation === 'landscape' ? 1189 : 841;
     const pageHeightMm = orientation === 'landscape' ? 841 : 1189;
-    const candidateDpi = [300, 240, 200];
-
-    let exportCanvas = null;
-    let exportCtx = null;
-    let pixelWidth = 0;
-    let pixelHeight = 0;
-    let usedDpi = candidateDpi[candidateDpi.length - 1];
-
-    for (const dpi of candidateDpi) {
-      const testWidth = Math.round((pageWidthMm / 25.4) * dpi);
-      const testHeight = Math.round((pageHeightMm / 25.4) * dpi);
-      try {
-        const candidate = document.createElement('canvas');
-        candidate.width = testWidth;
-        candidate.height = testHeight;
-        const candidateCtx = candidate.getContext('2d', { alpha: false });
-        if (!candidateCtx) continue;
-        candidateCtx.fillStyle = '#ffffff';
-        candidateCtx.fillRect(0, 0, testWidth, testHeight);
-        exportCanvas = candidate;
-        exportCtx = candidateCtx;
-        pixelWidth = testWidth;
-        pixelHeight = testHeight;
-        usedDpi = dpi;
-        break;
-      } catch {
-        // Try next lower DPI if browser cannot allocate enough memory.
-      }
-    }
-
-    if (!exportCanvas || !exportCtx) {
-      throw new Error('Kein Export-Canvas verfuegbar');
-    }
-
-    exportCtx.fillStyle = '#ffffff';
-    exportCtx.fillRect(0, 0, pixelWidth, pixelHeight);
-
-    const exportViewport = exportViewportFromBounds(bounds, pixelWidth, pixelHeight, Math.max(80, Math.round(pixelWidth * 0.03)));
-    drawSceneOnContext(exportCtx, exportViewport, {
-      showLabels: state.showEdgeLabels,
-      searchTerm: '',
-      activeNode: null,
-      selectedNodes: new Set(),
-    });
-
-    const imageData = exportCanvas.toDataURL('image/jpeg', 0.98);
     const { jsPDF } = window.jspdf;
     const doc = new jsPDF({
       orientation,
@@ -975,14 +1072,24 @@ async function exportMindmapDinA0Pdf() {
       format: [pageWidthMm, pageHeightMm],
       compress: true,
     });
-    doc.addImage(imageData, 'JPEG', 0, 0, pageWidthMm, pageHeightMm, undefined, 'FAST');
+
+    doc.setFillColor(255, 255, 255);
+    doc.rect(0, 0, pageWidthMm, pageHeightMm, 'F');
+
+    const viewport = pdfViewportFromBounds(bounds, pageWidthMm, pageHeightMm, 18);
+    for (const edge of state.edges) {
+      drawPdfEdge(doc, edge, viewport);
+    }
+    for (const node of state.nodes) {
+      drawPdfNode(doc, node, viewport);
+    }
 
     const baseName = (auth.mindmapName || auth.mindmapId || 'mindmap')
       .toLowerCase()
       .replace(/[^a-z0-9-]+/g, '-')
       .replace(/-+/g, '-')
       .replace(/^-|-$/g, '') || 'mindmap';
-    doc.save(`${baseName}-din-a0-${usedDpi}dpi.pdf`);
+    doc.save(`${baseName}-din-a0.pdf`);
   } catch (err) {
     console.error('PDF-Export fehlgeschlagen:', err);
     alert('PDF-Export fehlgeschlagen. Bitte erneut versuchen.');
