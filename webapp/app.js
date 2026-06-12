@@ -271,7 +271,8 @@ async function persist() {
     color:       e.color,
     label:       e.label || '',
     label_dx:    Number.isFinite(e.label_dx) ? Number(e.label_dx.toFixed(2)) : 0,
-    label_dy:    Number.isFinite(e.label_dy) ? Number(e.label_dy.toFixed(2)) : 0
+    label_dy:    Number.isFinite(e.label_dy) ? Number(e.label_dy.toFixed(2)) : 0,
+    curve_offset: Number.isFinite(e.curveOffset) ? e.curveOffset : 0
   }));
   try {
     await apiFetch(API, {
@@ -320,6 +321,9 @@ function parseData(persons, connections) {
     const pairKey   = [c.from_id, c.to_id].sort().join('|');
     const pairIndex = pairCounts.get(pairKey) || 0;
     pairCounts.set(pairKey, pairIndex + 1);
+    // Use saved curveOffset if available; compute from pair order otherwise (first load / old data)
+    const savedOffset = (c.curve_offset !== undefined && c.curve_offset !== null) ? Number(c.curve_offset) : null;
+    const computedOffset = (pairIndex % 2 === 0 ? 1 : -1) * (10 + Math.floor(pairIndex / 2) * 12);
     return {
       id:          index,
       relation_id: c.relation_id,
@@ -329,7 +333,7 @@ function parseData(persons, connections) {
       target:      state.nodeMap.get(c.to_id),
       color:       c.color,
       label:       c.label || '',
-      curveOffset: (pairIndex % 2 === 0 ? 1 : -1) * (10 + Math.floor(pairIndex / 2) * 12),
+      curveOffset: savedOffset !== null ? savedOffset : computedOffset,
       label_dx:    Number.isFinite(toNumber(c.label_dx)) ? toNumber(c.label_dx) : 0,
       label_dy:    Number.isFinite(toNumber(c.label_dy)) ? toNumber(c.label_dy) : 0
     };
@@ -389,7 +393,7 @@ function edgeControlPoint(edge) {
   const nx = -dy / dist;
   const ny = dx / dist;
   const bend = Math.min(42, Math.max(16, dist * 0.16)) + edge.curveOffset;
-  const directionSeed = source.id < target.id ? 1 : -1;
+  const directionSeed = edge.source.person_id < edge.target.person_id ? 1 : -1;
   return {
     cx: (source.x + target.x) / 2 + nx * bend * directionSeed,
     cy: (source.y + target.y) / 2 + ny * bend * directionSeed,
