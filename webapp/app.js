@@ -73,7 +73,7 @@ const editDeleteBtn = document.getElementById('editDeleteBtn');
 const zoomInBtn = document.getElementById('zoomInBtn');
 const zoomOutBtn = document.getElementById('zoomOutBtn');
 const centerizeBtn = document.getElementById('centerizeBtn');
-const exportPdfBtn = document.getElementById('exportPdfBtn');
+const exportPngBtn = document.getElementById('exportPngBtn');
 const personModal = document.getElementById('personModal');
 const personName = document.getElementById('personName');
 const personPhotoInput = document.getElementById('personPhotoInput');
@@ -926,19 +926,15 @@ function chooseExportCanvasSize(pageWidthMm, pageHeightMm) {
   throw new Error('Kein stabiler Export-Canvas verfuegbar');
 }
 
-async function exportMindmapDinA0Pdf() {
-  if (!window.jspdf || !window.jspdf.jsPDF) {
-    alert('PDF-Bibliothek ist nicht geladen. Bitte Seite neu laden.');
-    return;
-  }
+async function exportMindmapDinA0Png() {
   if (state.nodes.length === 0) {
     alert('Keine Daten vorhanden, die exportiert werden koennen.');
     return;
   }
 
-  if (exportPdfBtn) {
-    exportPdfBtn.disabled = true;
-    exportPdfBtn.textContent = 'Export ...';
+  if (exportPngBtn) {
+    exportPngBtn.disabled = true;
+    exportPngBtn.textContent = 'Export ...';
   }
 
   try {
@@ -969,29 +965,27 @@ async function exportMindmapDinA0Pdf() {
       selectedNodes: new Set(),
     });
 
-    const imageData = exportCanvas.toDataURL('image/jpeg', 0.98);
-    const { jsPDF } = window.jspdf;
-    const doc = new jsPDF({
-      orientation,
-      unit: 'mm',
-      format: [pageWidthMm, pageHeightMm],
-      compress: true,
-    });
-    doc.addImage(imageData, 'JPEG', 0, 0, pageWidthMm, pageHeightMm, undefined, 'FAST');
-
     const baseName = (auth.mindmapName || auth.mindmapId || 'mindmap')
       .toLowerCase()
       .replace(/[^a-z0-9-]+/g, '-')
       .replace(/-+/g, '-')
       .replace(/^-|-$/g, '') || 'mindmap';
-    doc.save(`${baseName}-din-a0-${dpi}dpi.pdf`);
+
+    exportCanvas.toBlob(blob => {
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${baseName}-din-a0-${dpi}dpi.png`;
+      a.click();
+      URL.revokeObjectURL(url);
+    }, 'image/png');
   } catch (err) {
-    console.error('PDF-Export fehlgeschlagen:', err);
-    alert('PDF-Export fehlgeschlagen. Bitte erneut versuchen.');
+    console.error('PNG-Export fehlgeschlagen:', err);
+    alert('PNG-Export fehlgeschlagen. Bitte erneut versuchen.');
   } finally {
-    if (exportPdfBtn) {
-      exportPdfBtn.disabled = false;
-      exportPdfBtn.textContent = 'PDF A0';
+    if (exportPngBtn) {
+      exportPngBtn.disabled = false;
+      exportPngBtn.textContent = 'PNG A0';
     }
   }
 }
@@ -1243,7 +1237,7 @@ function smoothZoom(factor, durationMs = 220) {
 zoomInBtn.addEventListener('click',  () => smoothZoom(1.4));
 zoomOutBtn.addEventListener('click', () => smoothZoom(1 / 1.4));
 centerizeBtn.addEventListener('click', () => centerize(true));
-if (exportPdfBtn) exportPdfBtn.addEventListener('click', () => { exportMindmapDinA0Pdf(); });
+if (exportPngBtn) exportPngBtn.addEventListener('click', () => { exportMindmapDinA0Png(); });
 
 function centerize(animated = true, durationMs = 300) {
   if (state.nodes.length === 0) return;
