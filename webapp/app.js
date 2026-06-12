@@ -66,6 +66,9 @@ const editFrom = document.getElementById('editFrom');
 const editTo = document.getElementById('editTo');
 const editColor = document.getElementById('editColor');
 const editLabel = document.getElementById('editLabel');
+const editCurveOffset = document.getElementById('editCurveOffset');
+const editCurveOffsetNumber = document.getElementById('editCurveOffsetNumber');
+const editCurveOffsetResetBtn = document.getElementById('editCurveOffsetResetBtn');
 const editError = document.getElementById('editError');
 const editCancelBtn = document.getElementById('editCancelBtn');
 const editSaveBtn = document.getElementById('editSaveBtn');
@@ -1661,6 +1664,18 @@ addPersonName.addEventListener('keydown', e => { if (e.key === 'Enter') saveNewP
 // ── Kontextmenü (Rechtsklick auf Knoten) ───────────
 
 let ctxEdge = null; // die aktuell zu bearbeitende Kante
+let editOriginalCurveOffset = null;
+
+function clampCurveOffset(value) {
+  return Math.max(-80, Math.min(80, value));
+}
+
+function setEditCurveOffsetValue(value) {
+  const next = clampCurveOffset(Math.round(Number(value) || 0));
+  if (editCurveOffset) editCurveOffset.value = String(next);
+  if (editCurveOffsetNumber) editCurveOffsetNumber.value = String(next);
+  return next;
+}
 
 function hideCtxMenu() {
   ctxMenu.hidden = true;
@@ -1752,25 +1767,32 @@ document.addEventListener('pointerdown', e => {
 
 function openEditModal(edge) {
   ctxEdge = edge;
+  editOriginalCurveOffset = Number.isFinite(edge.curveOffset) ? edge.curveOffset : 0;
   editFrom.value = edge.source.display_name;
   editTo.value = edge.target.display_name;
   editColor.value = edge.color;
   editLabel.value = edge.label || '';
+  setEditCurveOffsetValue(edge.curveOffset);
   editError.hidden = true;
   editModal.hidden = false;
   editLabel.focus();
 }
 
-function closeEditModal() {
+function closeEditModal(restoreCurve = true) {
+  if (restoreCurve && ctxEdge && editOriginalCurveOffset !== null) {
+    ctxEdge.curveOffset = editOriginalCurveOffset;
+  }
   editModal.hidden = true;
   ctxEdge = null;
+  editOriginalCurveOffset = null;
 }
 
 function saveEdit() {
   if (!ctxEdge) return;
   ctxEdge.color = editColor.value;
   ctxEdge.label = editLabel.value.trim();
-  closeEditModal();
+  ctxEdge.curveOffset = setEditCurveOffsetValue(editCurveOffsetNumber ? editCurveOffsetNumber.value : 0);
+  closeEditModal(false);
   persist();
 }
 
@@ -1802,6 +1824,24 @@ editSaveBtn.addEventListener('click', saveEdit);
 editDeleteBtn.addEventListener('click', deleteEdge);
 editCancelBtn.addEventListener('click', closeEditModal);
 editModal.addEventListener('click', e => { if (e.target === editModal) closeEditModal(); });
+if (editCurveOffset) {
+  editCurveOffset.addEventListener('input', () => {
+    const next = setEditCurveOffsetValue(editCurveOffset.value);
+    if (ctxEdge) ctxEdge.curveOffset = next; // live preview while sliding
+  });
+}
+if (editCurveOffsetNumber) {
+  editCurveOffsetNumber.addEventListener('input', () => {
+    const next = setEditCurveOffsetValue(editCurveOffsetNumber.value);
+    if (ctxEdge) ctxEdge.curveOffset = next; // live preview while typing
+  });
+}
+if (editCurveOffsetResetBtn) {
+  editCurveOffsetResetBtn.addEventListener('click', () => {
+    const next = setEditCurveOffsetValue(0);
+    if (ctxEdge) ctxEdge.curveOffset = next;
+  });
+}
 
 // ── Modal: Person bearbeiten ────────────────────────
 

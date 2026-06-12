@@ -302,6 +302,34 @@ body {
   background: #fff;
 }
 
+.modal label input[type='range'] {
+  padding: 0;
+}
+
+.curve-offset-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.curve-offset-row input {
+  flex: 1;
+}
+
+.curve-offset-row button {
+  border: 1px solid #d1d5db;
+  border-radius: 8px;
+  background: #fff;
+  color: #111;
+  font-weight: 600;
+  padding: 8px 12px;
+  cursor: pointer;
+}
+
+.curve-offset-row button:hover {
+  background: #f3f4f6;
+}
+
 .modal label input:focus,
 .modal label select:focus {
   border-color: #2563eb;

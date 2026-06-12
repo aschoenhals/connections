@@ -161,6 +161,17 @@
           <input id="editLabel" type="text" placeholder="z. B. Tochter, Trauzeuge …" />
         </label>
 
+        <label>Kurvenstärke
+          <input id="editCurveOffset" type="range" min="-80" max="80" step="1" value="0" />
+        </label>
+        <label>Kurvenwert
+          <div class="curve-offset-row">
+            <input id="editCurveOffsetNumber" type="number" min="-80" max="80" step="1" value="0" />
+            <button id="editCurveOffsetResetBtn" type="button">Zurücksetzen</button>
+          </div>
+          <small class="field-hint">Negativ/positiv biegt die Linie auf die andere Seite.</small>
+        </label>
+
         <p id="editError" class="modal-error" hidden></p>
 
         <div class="modal-actions">
