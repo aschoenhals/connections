@@ -464,22 +464,37 @@ def index():
 def get_portrait(filename: str):
     if filename == "placeholder.svg":
         return send_from_directory(PORTRAITS_DIR, filename)
+    requested = Path(filename)
     if USE_SUPABASE_STORAGE:
-        try:
-            upstream = requests.get(_supabase_object_public_url(filename), timeout=12)
-        except requests.RequestException:
-            return jsonify({"error": "Portrait could not be loaded"}), 502
+        candidates = [filename] if requested.suffix else [f"{filename}.{ext}" for ext in ALLOWED_EXTENSIONS]
+        for candidate in candidates:
+            try:
+                upstream = requests.get(_supabase_object_public_url(candidate), timeout=12)
+            except requests.RequestException:
+                continue
 
-        if upstream.status_code == 404:
-            return jsonify({"error": "Portrait not found"}), 404
-        if not upstream.ok:
-            return jsonify({"error": "Portrait upstream error"}), 502
+            if not upstream.ok:
+                continue
 
-        content_type = upstream.headers.get("content-type", "application/octet-stream")
-        response = Response(upstream.content, status=200, content_type=content_type)
-        response.headers["Cache-Control"] = upstream.headers.get("cache-control", "public, max-age=3600")
-        return response
-    return send_from_directory(PORTRAITS_DIR, filename)
+            content_type = upstream.headers.get("content-type", "application/octet-stream")
+            response = Response(upstream.content, status=200, content_type=content_type)
+            response.headers["Cache-Control"] = upstream.headers.get("cache-control", "public, max-age=3600")
+            return response
+
+        return send_from_directory(PORTRAITS_DIR, "placeholder.svg")
+
+    if requested.suffix:
+        local_path = PORTRAITS_DIR / filename
+        if local_path.exists():
+            return send_from_directory(PORTRAITS_DIR, filename)
+        return send_from_directory(PORTRAITS_DIR, "placeholder.svg")
+
+    for ext in ALLOWED_EXTENSIONS:
+        candidate = f"{filename}.{ext}"
+        if (PORTRAITS_DIR / candidate).exists():
+            return send_from_directory(PORTRAITS_DIR, candidate)
+
+    return send_from_directory(PORTRAITS_DIR, "placeholder.svg")
 
 
 @app.route("/<path:path>")

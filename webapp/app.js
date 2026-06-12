@@ -230,23 +230,10 @@ function loadPortrait(personId) {
   const prefix = auth.mindmapId ? `${auth.mindmapId}/` : '';
   const version = portraitVersions.get(personId) || 0;
   const versionQuery = version ? `?v=${version}` : '';
-
-  const tryExtensions = (exts) => {
-    if (exts.length === 0) {
-      // All person-specific extensions failed → try placeholder
-      const img = new Image();
-      img.onload = () => imageCache.set(personId, img);
-      img.onerror = () => imageCache.set(personId, 'error');
-      img.src = '/portraits/placeholder.svg';
-      return;
-    }
-    const img = new Image();
-    img.onload = () => imageCache.set(personId, img);
-    img.onerror = () => tryExtensions(exts.slice(1));
-    img.src = `/portraits/${prefix}${personId}.${exts[0]}${versionQuery}`;
-  };
-
-  tryExtensions(['jpg', 'jpeg', 'png']);
+  const img = new Image();
+  img.onload = () => imageCache.set(personId, img);
+  img.onerror = () => imageCache.set(personId, 'error');
+  img.src = `/portraits/${prefix}${personId}${versionQuery}`;
 }
 
 const API = '/api/data';
@@ -1850,7 +1837,10 @@ let personModalNode = null; // the node currently being edited
 function _currentPortraitSrc(personId) {
   const cached = imageCache.get(personId);
   if (cached && cached !== 'loading' && cached !== 'error') return cached.src;
-  return '/portraits/placeholder.svg';
+  const prefix = auth.mindmapId ? `${auth.mindmapId}/` : '';
+  const version = portraitVersions.get(personId) || 0;
+  const versionQuery = version ? `?v=${version}` : '';
+  return `/portraits/${prefix}${personId}${versionQuery}`;
 }
 
 function openPersonModal(node) {
