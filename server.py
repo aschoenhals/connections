@@ -530,6 +530,7 @@ def save_data():
         label = str(c.get("label", "")).strip()
         label_dx = _parse_float(c.get("label_dx"))
         label_dy = _parse_float(c.get("label_dy"))
+        curve_offset = _parse_float(c.get("curve_offset"))
         if not rid or not from_id or not to_id or color not in VALID_COLORS:
             continue
         if from_id not in valid_ids or to_id not in valid_ids:
@@ -543,6 +544,7 @@ def save_data():
                 "label": label,
                 "label_dx": label_dx if label_dx is not None else 0.0,
                 "label_dy": label_dy if label_dy is not None else 0.0,
+                "curve_offset": curve_offset,
             }
         )
 
